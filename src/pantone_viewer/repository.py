@@ -9,6 +9,8 @@ from typing import Any
 from .acb_parser import Book, parse_acb
 from .ase_parser import parse_ase
 
+DEFAULT_PALETTE_FILENAME = "pantone solid coated-v4.acb"
+
 
 @dataclass(slots=True)
 class CacheEntry:
@@ -64,20 +66,7 @@ class ACBRepository:
 
     def get_book_details(self, book_id: str) -> dict[str, Any]:
         with self._lock:
-            error = self._refresh_id_map()
-            if error:
-                raise FileNotFoundError(error)
-
-            path = self._id_to_path.get(book_id)
-            if path is None:
-                raise KeyError(book_id)
-
-            entry = self._load_cached(book_id, path)
-            if entry.error:
-                raise RuntimeError(entry.error)
-            assert entry.book is not None
-            book = entry.book
-
+            path, book = self._require_book(book_id)
             return {
                 "id": book_id,
                 "title": path.stem,
@@ -94,7 +83,26 @@ class ACBRepository:
                 ],
             }
 
-    def search_by_hex(self, query: str, limit: int = 200) -> dict[str, Any]:
+    def get_default_palette_id(self) -> str | None:
+        with self._lock:
+            error = self._refresh_id_map()
+            if error:
+                return None
+            return self._pick_default_palette_id(self._id_to_path)
+
+    def get_palette_title(self, book_id: str) -> str:
+        with self._lock:
+            error = self._refresh_id_map()
+            if error:
+                raise FileNotFoundError(error)
+            path = self._id_to_path.get(book_id)
+            if path is None:
+                raise KeyError(book_id)
+            return path.stem
+
+    def search_by_hex(
+        self, query: str, book_id: str | None = None, limit: int = 200
+    ) -> dict[str, Any]:
         with self._lock:
             error = self._refresh_id_map()
             if error:
@@ -103,17 +111,18 @@ class ACBRepository:
             normalized_hex = _normalize_hex(query)
             target_rgb = _hex_to_rgb(normalized_hex)
 
+            scoped_books = self._resolve_book_scope(book_id)
             exact_matches: list[dict[str, Any]] = []
             nearest: list[tuple[int, dict[str, Any]]] = []
 
-            for book_id, path in self._id_to_path.items():
-                entry = self._load_cached(book_id, path)
+            for scoped_id, path in scoped_books:
+                entry = self._load_cached(scoped_id, path)
                 if entry.error or entry.book is None:
                     continue
 
                 for color in entry.book.colors:
                     item = {
-                        "book_id": book_id,
+                        "book_id": scoped_id,
                         "book_title": path.stem,
                         "filename": path.name,
                         "name": color.name,
@@ -130,12 +139,66 @@ class ACBRepository:
             nearest.sort(key=lambda row: row[0])
             nearest_items = [item | {"distance": distance} for distance, item in nearest[:limit]]
 
+            scope_label = (
+                scoped_books[0][1].stem
+                if len(scoped_books) == 1
+                else f"All palettes ({len(scoped_books)})"
+            )
             return {
                 "query": normalized_hex,
+                "scope": scope_label,
+                "scope_book_id": scoped_books[0][0] if len(scoped_books) == 1 else None,
                 "exact_count": len(exact_matches),
                 "exact_matches": exact_matches[:limit],
                 "nearest": nearest_items,
             }
+
+    def nearest_in_book(self, target_rgb: tuple[int, int, int], book_id: str) -> dict[str, Any]:
+        with self._lock:
+            path, book = self._require_book(book_id)
+
+            nearest: tuple[int, Any] | None = None
+            for color in book.colors:
+                distance = _rgb_distance(target_rgb, _hex_to_rgb(color.hex))
+                if nearest is None or distance < nearest[0]:
+                    nearest = (distance, color)
+
+            if nearest is None:
+                raise RuntimeError(f"No colors available in palette: {book_id}")
+
+            distance, color = nearest
+            return {
+                "book_id": book_id,
+                "book_title": path.stem,
+                "filename": path.name,
+                "name": color.name,
+                "code": color.code or None,
+                "hex": color.hex,
+                "distance": distance,
+            }
+
+    def _require_book(self, book_id: str) -> tuple[Path, Book]:
+        error = self._refresh_id_map()
+        if error:
+            raise FileNotFoundError(error)
+
+        path = self._id_to_path.get(book_id)
+        if path is None:
+            raise KeyError(book_id)
+
+        entry = self._load_cached(book_id, path)
+        if entry.error:
+            raise RuntimeError(entry.error)
+        assert entry.book is not None
+        return path, entry.book
+
+    def _resolve_book_scope(self, book_id: str | None) -> list[tuple[str, Path]]:
+        if book_id:
+            path = self._id_to_path.get(book_id)
+            if path is None:
+                raise KeyError(book_id)
+            return [(book_id, path)]
+        return list(self._id_to_path.items())
 
     def _refresh_id_map(self) -> str | None:
         if not self.acb_dir.exists():
@@ -183,6 +246,21 @@ class ACBRepository:
         return entry
 
     @staticmethod
+    def _pick_default_palette_id(id_to_path: dict[str, Path]) -> str | None:
+        for book_id, path in id_to_path.items():
+            if path.name.lower() == DEFAULT_PALETTE_FILENAME:
+                return book_id
+
+        for book_id, path in id_to_path.items():
+            if path.suffix.lower() == ".acb":
+                return book_id
+
+        for book_id in id_to_path:
+            return book_id
+
+        return None
+
+    @staticmethod
     def _unique_slug(seed: str, used_ids: set[str]) -> str:
         base = re.sub(r"[^a-zA-Z0-9]+", "-", seed.strip().lower()).strip("-")
         if not base:
@@ -226,3 +304,4 @@ def _rgb_distance(left: tuple[int, int, int], right: tuple[int, int, int]) -> in
         + (left[1] - right[1]) * (left[1] - right[1])
         + (left[2] - right[2]) * (left[2] - right[2])
     )
+

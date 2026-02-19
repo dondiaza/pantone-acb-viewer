@@ -65,7 +65,8 @@ body {
   font-family: Consolas, "Courier New", monospace;
 }
 
-.search-form {
+.search-form,
+.psd-form {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -76,20 +77,31 @@ body {
   align-items: center;
 }
 
-.search-form input {
+.search-form input,
+.search-form select,
+.psd-form input,
+.psd-form select {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
   min-width: 180px;
 }
 
-.search-form button {
+.search-form button,
+.psd-form button,
+.secondary-button {
   border: 1px solid #23324a;
   background: #23324a;
   color: #fff;
   border-radius: 8px;
   padding: 8px 12px;
   cursor: pointer;
+}
+
+.secondary-button {
+  background: #fff;
+  color: #23324a;
+  border-color: #9cadc4;
 }
 
 .message {
@@ -196,7 +208,9 @@ body {
   color: var(--danger-text);
 }
 
-.search-results {
+.search-results,
+.psd-results,
+.psd-section {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -204,7 +218,9 @@ body {
   margin: 14px 0;
 }
 
-.search-results h2 {
+.search-results h2,
+.psd-results h2,
+.psd-section h2 {
   margin: 0;
 }
 
@@ -224,6 +240,49 @@ body {
   color: var(--muted);
 }
 
+.psd-grid {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.psd-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: #fff;
+}
+
+.psd-swatches {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.psd-swatch-wrap {
+  width: 80px;
+  text-align: center;
+}
+
+.psd-swatch {
+  width: 80px;
+  height: 56px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.psd-swatch-label {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.psd-meta {
+  font-size: 0.93rem;
+  line-height: 1.35;
+}
+
 @media (max-width: 640px) {
   .layout {
     padding: 16px 12px 32px;
@@ -238,7 +297,9 @@ body {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   }
 
-  .search-form {
+  .search-form,
+  .psd-form {
     width: 100%;
   }
 }
+
