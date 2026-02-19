@@ -276,8 +276,9 @@ body {
 }
 
 .psd-swatches {
-  display: flex;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 8px;
   margin-bottom: 8px;
 }
 
@@ -303,6 +304,11 @@ body {
 .psd-meta {
   font-size: 0.93rem;
   line-height: 1.35;
+}
+
+.subheading {
+  margin: 10px 0 8px;
+  font-size: 1rem;
 }
 
 @media (max-width: 640px) {

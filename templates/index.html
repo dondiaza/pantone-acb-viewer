@@ -41,24 +41,27 @@
       </section>
 
       <section class="psd-section">
-        <h2>Importador PSD</h2>
+        <h2>Importador de Imagen/PSD</h2>
         <form id="psdForm" class="psd-form">
-          <label for="psdFileInput">Archivo PSD</label>
-          <input id="psdFileInput" name="file" type="file" accept=".psd" hidden />
+          <label for="psdFileInput">Archivo</label>
+          <input id="psdFileInput" name="file" type="file" accept=".psd,.png,.jpg,.jpeg" hidden />
           <div id="psdDropZone" class="psd-dropzone" role="button" tabindex="0">
-            Arrastra y suelta el PSD aqui, o haz clic para seleccionarlo
+            Arrastra y suelta un PSD/JPG/PNG aqui, o haz clic para seleccionarlo
           </div>
           <div id="psdFileName" class="hint">Ningun archivo seleccionado</div>
           <label for="psdBookSelect">Sugerir con paleta</label>
           <select id="psdBookSelect" name="book_id"></select>
-          <button type="submit">Analizar PSD</button>
+          <button type="submit">Analizar archivo</button>
         </form>
-        <p class="hint">Detecta colores por capa y sugiere el Pantone mas cercano cuando no hay coincidencia exacta.</p>
+        <p class="hint">Detecta colores por capa (o imagen) y sugiere el Pantone mas cercano cuando no hay coincidencia exacta.</p>
       </section>
 
       <section id="psdResults" class="psd-results" hidden>
-        <h2>Sugerencias PSD</h2>
+        <h2>Sugerencias por Capa</h2>
         <p id="psdSummary" class="hint"></p>
+        <h3 class="subheading">Resumen global de colores detectados</h3>
+        <div id="psdSummaryCards" class="color-grid"></div>
+        <h3 class="subheading">Detalle por capa</h3>
         <div id="psdCards" class="psd-grid"></div>
       </section>
 
