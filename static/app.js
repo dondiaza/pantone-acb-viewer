@@ -6,7 +6,7 @@ const ALLOWED_IMAGE_EXTENSIONS = [".psd", ".png", ".jpg", ".jpeg"];
 const state = {
   books: [],
   defaultPaletteId: null,
-  psdFile: null,
+  psdFiles: [],
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -77,36 +77,45 @@ function setupPsdImport() {
   const fileInput = document.getElementById("psdFileInput");
   const fileLabel = document.getElementById("psdFileName");
   const dropZone = document.getElementById("psdDropZone");
+  const noiseRange = document.getElementById("noiseRange");
+  const noiseLabel = document.getElementById("noiseLabel");
 
-  const setFile = (file) => {
-    if (!file) {
-      state.psdFile = null;
-      fileLabel.textContent = "Ningun archivo seleccionado";
-      return;
+  const updateNoiseLabel = () => {
+    noiseLabel.textContent = String(noiseRange.value);
+  };
+  noiseRange.addEventListener("input", updateNoiseLabel);
+  updateNoiseLabel();
+
+  const setFiles = (files) => {
+    const accepted = [];
+    for (const file of files) {
+      const lowerName = file.name.toLowerCase();
+      const valid = ALLOWED_IMAGE_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
+      if (valid) {
+        accepted.push(file);
+      }
     }
 
-    const lowerName = file.name.toLowerCase();
-    const valid = ALLOWED_IMAGE_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
-    if (!valid) {
+    if (accepted.length === 0) {
+      state.psdFiles = [];
+      fileLabel.textContent = "Ningun archivo seleccionado";
       showMessage("Solo se admiten archivos .psd, .png, .jpg o .jpeg.", true);
       return;
     }
 
-    state.psdFile = file;
-    fileLabel.textContent = `${file.name} (${prettyBytes(file.size)})`;
-
-    try {
-      const dt = new DataTransfer();
-      dt.items.add(file);
-      fileInput.files = dt.files;
-    } catch {
-      // Mejor esfuerzo para reflejar el archivo soltado en el input oculto.
-    }
+    state.psdFiles = accepted;
+    const preview = accepted.slice(0, 3).map((item) => item.name).join(", ");
+    const tail = accepted.length > 3 ? ` +${accepted.length - 3} mas` : "";
+    fileLabel.textContent = `${accepted.length} archivo(s): ${preview}${tail}`;
   };
 
+  fileInput.addEventListener("click", () => {
+    // Permite seleccionar el mismo archivo de nuevo y disparar "change".
+    fileInput.value = "";
+  });
   fileInput.addEventListener("change", () => {
-    const file = fileInput.files && fileInput.files[0];
-    setFile(file || null);
+    const files = Array.from(fileInput.files || []);
+    setFiles(files);
   });
 
   dropZone.addEventListener("click", () => fileInput.click());
@@ -132,35 +141,82 @@ function setupPsdImport() {
   });
 
   dropZone.addEventListener("drop", (event) => {
-    const files = event.dataTransfer?.files;
-    if (!files || files.length === 0) {
-      return;
-    }
-    setFile(files[0]);
+    const files = Array.from(event.dataTransfer?.files || []);
+    setFiles(files);
   });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     const paletteSelect = document.getElementById("psdBookSelect");
-    const file = state.psdFile;
-    if (!file) {
-      showMessage("Primero selecciona o arrastra un archivo.", true);
+    const includeHidden = document.getElementById("includeHiddenChk").checked;
+    const includeOverlay = document.getElementById("includeOverlayChk").checked;
+    const urlInput = document.getElementById("urlInput");
+    const sourceUrl = urlInput.value.trim();
+    const noise = Number(noiseRange.value);
+
+    if (state.psdFiles.length === 0 && !sourceUrl) {
+      showMessage("Selecciona o arrastra archivos, o indica una URL.", true);
       return;
     }
 
+    const options = {
+      bookId: paletteSelect.value || "",
+      noise,
+      includeHidden,
+      includeOverlay,
+    };
+
+    const results = [];
     try {
-      const payload = await uploadAndAnalyzeFile(file, paletteSelect.value || "");
-      renderPsdResults(payload);
+      for (let index = 0; index < state.psdFiles.length; index += 1) {
+        const file = state.psdFiles[index];
+        showMessage(`Analizando archivo ${index + 1}/${state.psdFiles.length}: ${file.name}`);
+        const payload = await uploadAndAnalyzeFile(file, options);
+        results.push({
+          filename: file.name,
+          source: "archivo",
+          payload,
+        });
+      }
+
+      if (sourceUrl) {
+        showMessage("Analizando archivo desde URL...");
+        const payload = await analyzeFromUrl(sourceUrl, options);
+        results.push({
+          filename: payload.filename || sourceUrl,
+          source: "url",
+          payload,
+        });
+      }
+
+      renderMultiFileResults(results);
       clearMessages();
     } catch (error) {
-      showMessage(`Fallo en el analisis del archivo: ${error.message}`, true);
+      showMessage(`Fallo en el analisis: ${error.message}`, true);
     }
   });
 }
 
-async function uploadAndAnalyzeFile(file, paletteId) {
-  showMessage("Iniciando carga...");
+async function uploadAndAnalyzeFile(file, options) {
+  if (file.size > MAX_PSD_UPLOAD_BYTES) {
+    throw new Error(
+      `El archivo ${file.name} (${prettyBytes(file.size)}) supera el limite de ${prettyBytes(MAX_PSD_UPLOAD_BYTES)}.`,
+    );
+  }
+
+  try {
+    return await uploadAndAnalyzeFileOnce(file, options);
+  } catch (error) {
+    const text = String(error.message || "");
+    if (text.includes("Sesion de carga no encontrada")) {
+      return await uploadAndAnalyzeFileOnce(file, options);
+    }
+    throw error;
+  }
+}
+
+async function uploadAndAnalyzeFileOnce(file, options) {
   const initResponse = await fetch("/api/import/init", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -193,15 +249,17 @@ async function uploadAndAnalyzeFile(file, paletteId) {
     }
 
     const percent = Math.round(((index + 1) / totalChunks) * 100);
-    showMessage(`Subiendo archivo... ${percent}%`);
+    showMessage(`Subiendo ${file.name}... ${percent}%`);
   }
 
-  showMessage("Procesando colores...");
   const finishBody = new FormData();
   finishBody.append("filename", file.name);
-  if (paletteId) {
-    finishBody.append("book_id", paletteId);
+  if (options.bookId) {
+    finishBody.append("book_id", options.bookId);
   }
+  finishBody.append("noise", String(options.noise));
+  finishBody.append("include_hidden", options.includeHidden ? "1" : "0");
+  finishBody.append("include_overlay", options.includeOverlay ? "1" : "0");
 
   const finishResponse = await fetch(`/api/import/${encodeURIComponent(uploadId)}/finish`, {
     method: "POST",
@@ -212,6 +270,25 @@ async function uploadAndAnalyzeFile(file, paletteId) {
     throw new Error(formatApiError(finishResponse.status, finishPayload.error || ""));
   }
   return finishPayload;
+}
+
+async function analyzeFromUrl(sourceUrl, options) {
+  const response = await fetch("/api/import/url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url: sourceUrl,
+      book_id: options.bookId || "",
+      noise: options.noise,
+      include_hidden: options.includeHidden,
+      include_overlay: options.includeOverlay,
+    }),
+  });
+  const payload = await parseApiResponse(response);
+  if (!response.ok) {
+    throw new Error(payload.error || `HTTP ${response.status}`);
+  }
+  return payload;
 }
 
 async function loadBooks() {
@@ -470,50 +547,91 @@ function renderSearchResults(payload) {
   }
 }
 
-function renderPsdResults(payload) {
+function renderMultiFileResults(items) {
   const section = document.getElementById("psdResults");
-  const summary = document.getElementById("psdSummary");
-  const summaryCardsRoot = document.getElementById("psdSummaryCards");
-  const cardsRoot = document.getElementById("psdCards");
-
+  const container = document.getElementById("psdResultsContainer");
   section.hidden = false;
-  summaryCardsRoot.innerHTML = "";
-  cardsRoot.innerHTML = "";
-  summary.textContent = `${payload.filename || "Archivo"} | paleta: ${payload.palette_title} | capas analizadas: ${payload.layer_count}`;
+  container.innerHTML = "";
 
-  const summaryColors = payload.summary_colors || [];
-  if (summaryColors.length === 0) {
-    const emptySummary = document.createElement("div");
-    emptySummary.className = "message";
-    emptySummary.textContent = "No se detectaron colores.";
-    summaryCardsRoot.appendChild(emptySummary);
-  } else {
-    for (const item of summaryColors) {
-      const card = createColorCard({
-        name: `${item.pantone.name} · ${item.occurrences} apariciones`,
-        code: item.pantone.code,
-        hex: item.pantone.hex,
-      });
-      const info = document.createElement("div");
-      info.className = "code";
-      info.textContent = `Paleta ${item.pantone.book_title} | Capas: ${item.layers.join(", ")}`;
-      card.querySelector(".card-body").appendChild(info);
-      summaryCardsRoot.appendChild(card);
-    }
+  if (items.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "message";
+    empty.textContent = "No hay resultados para mostrar.";
+    container.appendChild(empty);
+    return;
   }
 
+  items.forEach((item, index) => {
+    container.appendChild(createFileBlock(item, index));
+  });
+}
+
+function createFileBlock(item, index) {
+  const block = document.createElement("section");
+  block.className = "file-block";
+
+  const title = document.createElement("h3");
+  title.className = "file-title";
+  title.textContent = `${index + 1}. ${item.filename} ${item.source === "url" ? "(URL)" : ""}`;
+  block.appendChild(title);
+
+  const info = document.createElement("p");
+  info.className = "hint";
+  const payload = item.payload;
+  const opt = payload.options || {};
+  info.textContent = `Paleta: ${payload.palette_title} | Capas analizadas: ${payload.layer_count} | Ruido: ${opt.noise ?? "-"} | Capas no visibles: ${opt.include_hidden ? "si" : "no"}`;
+  block.appendChild(info);
+
+  const summaryHeading = document.createElement("h4");
+  summaryHeading.className = "subheading";
+  summaryHeading.textContent = "Resumen global de Pantones sugeridos";
+  block.appendChild(summaryHeading);
+
+  const summaryGrid = document.createElement("div");
+  summaryGrid.className = "color-grid";
+  const summaryColors = payload.summary_colors || [];
+  if (summaryColors.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "message";
+    empty.textContent = "No se detectaron colores.";
+    summaryGrid.appendChild(empty);
+  } else {
+    summaryColors.forEach((summaryItem) => {
+      const card = createColorCard({
+        name: `${summaryItem.pantone.name} · ${summaryItem.occurrences} apariciones`,
+        code: summaryItem.pantone.code,
+        hex: summaryItem.pantone.hex,
+      });
+      const extra = document.createElement("div");
+      extra.className = "code";
+      extra.textContent = `Capas: ${summaryItem.layers.join(", ")}`;
+      card.querySelector(".card-body").appendChild(extra);
+      summaryGrid.appendChild(card);
+    });
+  }
+  block.appendChild(summaryGrid);
+
+  const layerHeading = document.createElement("h4");
+  layerHeading.className = "subheading";
+  layerHeading.textContent = "Detalle por capa";
+  block.appendChild(layerHeading);
+
+  const layerRoot = document.createElement("div");
+  layerRoot.className = "psd-grid";
   const layers = payload.layers || [];
   if (layers.length === 0) {
     const empty = document.createElement("div");
     empty.className = "message";
     empty.textContent = "No se encontraron capas con color.";
-    cardsRoot.appendChild(empty);
-    return;
+    layerRoot.appendChild(empty);
+  } else {
+    layers.forEach((layer) => {
+      layerRoot.appendChild(createLayerColorCard(layer));
+    });
   }
+  block.appendChild(layerRoot);
 
-  for (const layer of layers) {
-    cardsRoot.appendChild(createLayerColorCard(layer));
-  }
+  return block;
 }
 
 function createLayerColorCard(layer) {
@@ -522,7 +640,7 @@ function createLayerColorCard(layer) {
 
   const title = document.createElement("div");
   title.className = "name";
-  title.textContent = layer.layer_name;
+  title.textContent = `${layer.layer_name}${layer.visible ? "" : " (oculta)"}`;
   card.appendChild(title);
 
   const grid = document.createElement("div");
@@ -627,3 +745,4 @@ function clearMessages() {
   const root = document.getElementById("messages");
   root.innerHTML = "";
 }
+

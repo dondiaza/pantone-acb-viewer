@@ -43,26 +43,41 @@
       <section class="psd-section">
         <h2>Importador de Imagen/PSD</h2>
         <form id="psdForm" class="psd-form">
-          <label for="psdFileInput">Archivo</label>
-          <input id="psdFileInput" name="file" type="file" accept=".psd,.png,.jpg,.jpeg" hidden />
+          <label for="psdFileInput">Archivos</label>
+          <input id="psdFileInput" name="file" type="file" accept=".psd,.png,.jpg,.jpeg" multiple hidden />
           <div id="psdDropZone" class="psd-dropzone" role="button" tabindex="0">
-            Arrastra y suelta un PSD/JPG/PNG aqui, o haz clic para seleccionarlo
+            Arrastra y suelta archivos PSD/JPG/PNG aqui, o haz clic para seleccionarlos
           </div>
           <div id="psdFileName" class="hint">Ningun archivo seleccionado</div>
+
+          <label for="urlInput">URL de archivo (opcional)</label>
+          <input id="urlInput" type="url" placeholder="https://ejemplo.com/archivo.psd" />
+
           <label for="psdBookSelect">Sugerir con paleta</label>
           <select id="psdBookSelect" name="book_id"></select>
-          <button type="submit">Analizar archivo</button>
+
+          <label for="noiseRange">Ruido / detalle</label>
+          <input id="noiseRange" type="range" min="0" max="100" step="1" value="35" />
+          <span id="noiseLabel" class="hint">35</span>
+
+          <label class="check-line">
+            <input id="includeHiddenChk" type="checkbox" />
+            Incluir capas no visibles
+          </label>
+
+          <label class="check-line">
+            <input id="includeOverlayChk" type="checkbox" checked />
+            Incluir superposicion/efectos de color
+          </label>
+
+          <button type="submit">Analizar seleccion</button>
         </form>
-        <p class="hint">Detecta colores por capa (o imagen) y sugiere el Pantone mas cercano cuando no hay coincidencia exacta.</p>
+        <p class="hint">A menor ruido, color mas global por capa. A mayor ruido, mas muestras distintas.</p>
       </section>
 
       <section id="psdResults" class="psd-results" hidden>
-        <h2>Sugerencias por Capa</h2>
-        <p id="psdSummary" class="hint"></p>
-        <h3 class="subheading">Resumen global de colores detectados</h3>
-        <div id="psdSummaryCards" class="color-grid"></div>
-        <h3 class="subheading">Detalle por capa</h3>
-        <div id="psdCards" class="psd-grid"></div>
+        <h2>Sugerencias por Archivo</h2>
+        <div id="psdResultsContainer" class="psd-results-container"></div>
       </section>
 
       <section id="books" class="books"></section>

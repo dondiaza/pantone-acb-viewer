@@ -11,22 +11,26 @@ from .repository import ACBRepository
 
 SUPPORTED_IMAGE_EXTENSIONS = {".psd", ".png", ".jpg", ".jpeg"}
 
-SIMILAR_RGB_DISTANCE2 = 14 * 14 * 3
-MIN_CLUSTER_RATIO = 0.03
-
 
 def suggest_from_file_bytes(
     file_bytes: bytes,
     filename: str,
     repository: ACBRepository,
     palette_id: str,
+    noise: float = 35.0,
+    include_hidden: bool = False,
+    include_overlay: bool = True,
 ) -> dict[str, Any]:
     extension = Path(filename).suffix.lower()
     if extension not in SUPPORTED_IMAGE_EXTENSIONS:
         raise RuntimeError(f"Formato de archivo no soportado: {extension or '(sin extension)'}")
 
     if extension == ".psd":
-        layers = _extract_layers_from_psd(file_bytes)
+        layers = _extract_layers_from_psd(
+            psd_bytes=file_bytes,
+            include_hidden=include_hidden,
+            include_overlay=include_overlay,
+        )
     else:
         layers = _extract_layers_from_raster(file_bytes, filename)
 
@@ -34,7 +38,7 @@ def suggest_from_file_bytes(
     summary_by_pantone: dict[str, dict[str, Any]] = {}
 
     for layer in layers:
-        color_clusters = _extract_dominant_clusters(layer["image"], max_colors=10)
+        color_clusters = _extract_dominant_clusters(layer["image"], noise=noise)
         if not color_clusters:
             continue
 
@@ -97,10 +101,17 @@ def suggest_from_file_bytes(
         "layer_count": len(layer_payload),
         "layers": layer_payload,
         "summary_colors": summary_colors,
+        "options": {
+            "noise": _normalize_noise(noise),
+            "include_hidden": include_hidden,
+            "include_overlay": include_overlay,
+        },
     }
 
 
-def _extract_layers_from_psd(psd_bytes: bytes) -> list[dict[str, Any]]:
+def _extract_layers_from_psd(
+    psd_bytes: bytes, include_hidden: bool, include_overlay: bool
+) -> list[dict[str, Any]]:
     try:
         from psd_tools import PSDImage
     except Exception as exc:  # pragma: no cover
@@ -112,11 +123,22 @@ def _extract_layers_from_psd(psd_bytes: bytes) -> list[dict[str, Any]]:
     for layer in psd.descendants():
         if layer.is_group():
             continue
-
-        try:
-            rendered = layer.composite()
-        except Exception:
+        is_visible = bool(layer.is_visible())
+        if not include_hidden and not is_visible:
             continue
+
+        rendered = None
+        try:
+            if include_overlay:
+                # `composite(force=True)` intenta incluir efectos/estilos de capa (e.g. Color Overlay).
+                rendered = layer.composite(force=True)
+            else:
+                rendered = layer.topil()
+        except Exception:
+            try:
+                rendered = layer.composite(force=True)
+            except Exception:
+                rendered = None
         if rendered is None:
             continue
 
@@ -124,7 +146,7 @@ def _extract_layers_from_psd(psd_bytes: bytes) -> list[dict[str, Any]]:
         layers.append(
             {
                 "name": layer.name or f"Capa {index}",
-                "visible": bool(layer.is_visible()),
+                "visible": is_visible,
                 "image": rendered.convert("RGBA"),
             }
         )
@@ -142,12 +164,14 @@ def _extract_layers_from_raster(image_bytes: bytes, filename: str) -> list[dict[
     ]
 
 
-def _extract_dominant_clusters(image: Image.Image, max_colors: int = 8) -> list[dict[str, Any]]:
+def _extract_dominant_clusters(image: Image.Image, noise: float) -> list[dict[str, Any]]:
+    max_colors, similar_rgb_distance2, min_cluster_ratio = _noise_profile(noise)
+
     rgba = image.convert("RGBA")
     width, height = rgba.size
     pixel_count = width * height
 
-    max_pixels = 160_000
+    max_pixels = 180_000
     if pixel_count > max_pixels:
         scale = (max_pixels / float(pixel_count)) ** 0.5
         width = max(1, int(width * scale))
@@ -191,14 +215,14 @@ def _extract_dominant_clusters(image: Image.Image, max_colors: int = 8) -> list[
                 ),
             }
         )
-
     raw_clusters.sort(key=lambda item: float(item["weight"]), reverse=True)
+
     merged: list[dict[str, Any]] = []
     for cluster in raw_clusters:
         rgb = cluster["rgb"]
         merged_into_existing = False
         for existing in merged:
-            if _rgb_distance2(existing["rgb"], rgb) <= SIMILAR_RGB_DISTANCE2:
+            if _rgb_distance2(existing["rgb"], rgb) <= similar_rgb_distance2:
                 existing["weight"] += cluster["weight"]
                 merged_into_existing = True
                 break
@@ -213,7 +237,7 @@ def _extract_dominant_clusters(image: Image.Image, max_colors: int = 8) -> list[
     filtered = [
         item
         for item in merged
-        if (float(item["weight"]) / total_weight) >= MIN_CLUSTER_RATIO
+        if (float(item["weight"]) / total_weight) >= min_cluster_ratio
     ]
     if not filtered and merged:
         filtered = [merged[0]]
@@ -222,7 +246,27 @@ def _extract_dominant_clusters(image: Image.Image, max_colors: int = 8) -> list[
 
 
 def _extract_dominant_rgbs(image: Image.Image, max_colors: int = 8) -> list[tuple[int, int, int]]:
-    return [item["rgb"] for item in _extract_dominant_clusters(image, max_colors=max_colors)]
+    return [item["rgb"] for item in _extract_dominant_clusters(image, noise=100.0)[:max_colors]]
+
+
+def _noise_profile(noise: float) -> tuple[int, int, float]:
+    n = _normalize_noise(noise) / 100.0
+
+    # n bajo: más color global. n alto: más muestras distintas.
+    max_colors = int(round(1 + (n * 15)))  # 1..16
+    similar_distance = int(round(34 - (n * 28)))  # 34..6
+    min_cluster_ratio = 0.18 - (n * 0.165)  # 0.18..0.015
+
+    distance2 = similar_distance * similar_distance * 3
+    return max_colors, distance2, max(0.005, float(min_cluster_ratio))
+
+
+def _normalize_noise(noise: float) -> float:
+    try:
+        value = float(noise)
+    except Exception:
+        value = 35.0
+    return max(0.0, min(100.0, value))
 
 
 def _pantone_key(pantone: dict[str, Any]) -> str:
@@ -235,3 +279,4 @@ def _rgb_distance2(left: tuple[int, int, int], right: tuple[int, int, int]) -> i
         + (left[1] - right[1]) * (left[1] - right[1])
         + (left[2] - right[2]) * (left[2] - right[2])
     )
+
