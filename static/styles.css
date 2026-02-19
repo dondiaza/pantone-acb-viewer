@@ -1,0 +1,162 @@
+:root {
+  color-scheme: light;
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --border: #d9dee5;
+  --text: #1f2a37;
+  --muted: #5f6b7a;
+  --danger-bg: #fff1f2;
+  --danger-border: #fda4af;
+  --danger-text: #9f1239;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  background: linear-gradient(180deg, #eef2f7 0%, #f6f7fa 100%);
+  color: var(--text);
+}
+
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 1.8rem;
+}
+
+.hint {
+  margin-top: 8px;
+  color: var(--muted);
+}
+
+.messages {
+  margin: 16px 0;
+}
+
+.message {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--muted);
+}
+
+.message.error {
+  background: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.books {
+  display: grid;
+  gap: 10px;
+}
+
+.book {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.book > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  font-weight: 600;
+}
+
+.book > summary::-webkit-details-marker {
+  display: none;
+}
+
+.summary-meta {
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.book-body {
+  border-top: 1px solid var(--border);
+  padding: 16px;
+}
+
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.swatch {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-body {
+  padding: 10px;
+}
+
+.name {
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 4px;
+}
+
+.line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.hex {
+  font-family: Consolas, "Courier New", monospace;
+  font-weight: 700;
+}
+
+.code {
+  color: var(--muted);
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.badge-error {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.84rem;
+  color: var(--danger-text);
+}
+
+@media (max-width: 640px) {
+  .layout {
+    padding: 16px 12px 32px;
+  }
+
+  .book > summary,
+  .book-body {
+    padding: 12px;
+  }
+
+  .color-grid {
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  }
+}
+

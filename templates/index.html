@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pantone ACB Viewer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="header">
+        <h1>Pantone ACB Viewer</h1>
+        <p class="hint">Loads Adobe Color Book (*.acb) files from <code>./acb/</code></p>
+      </header>
+      <section id="messages" class="messages"></section>
+      <section id="books" class="books"></section>
+    </main>
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </body>
+</html>
+
