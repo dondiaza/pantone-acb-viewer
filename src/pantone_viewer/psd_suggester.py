@@ -11,6 +11,9 @@ from .repository import ACBRepository
 
 SUPPORTED_IMAGE_EXTENSIONS = {".psd", ".png", ".jpg", ".jpeg"}
 
+SIMILAR_RGB_DISTANCE2 = 14 * 14 * 3
+MIN_CLUSTER_RATIO = 0.03
+
 
 def suggest_from_file_bytes(
     file_bytes: bytes,
@@ -28,35 +31,55 @@ def suggest_from_file_bytes(
         layers = _extract_layers_from_raster(file_bytes, filename)
 
     layer_payload: list[dict[str, Any]] = []
-    summary: dict[str, dict[str, Any]] = {}
+    summary_by_pantone: dict[str, dict[str, Any]] = {}
 
     for layer in layers:
-        detected_rgbs = _extract_dominant_rgbs(layer["image"], max_colors=8)
-        if not detected_rgbs:
+        color_clusters = _extract_dominant_clusters(layer["image"], max_colors=10)
+        if not color_clusters:
             continue
 
-        layer_colors: list[dict[str, Any]] = []
-        for rgb in detected_rgbs:
+        layer_color_map: dict[str, dict[str, Any]] = {}
+        for cluster in color_clusters:
+            rgb = cluster["rgb"]
             detected_hex = rgb_to_hex(rgb)
             nearest = repository.nearest_in_book(rgb, palette_id)
-            item = {
-                "detected_hex": detected_hex,
-                "pantone": nearest,
-            }
-            layer_colors.append(item)
+            pantone_key = _pantone_key(nearest)
 
-            existing = summary.get(detected_hex)
-            if existing is None:
-                summary[detected_hex] = {
+            existing_layer_color = layer_color_map.get(pantone_key)
+            if existing_layer_color is None:
+                layer_color_map[pantone_key] = {
                     "detected_hex": detected_hex,
                     "pantone": nearest,
+                    "weight": cluster["weight"],
+                }
+            else:
+                previous_weight = float(existing_layer_color["weight"])
+                existing_layer_color["weight"] += cluster["weight"]
+                if float(cluster["weight"]) > previous_weight:
+                    existing_layer_color["detected_hex"] = detected_hex
+                    existing_layer_color["pantone"] = nearest
+
+        layer_colors = sorted(
+            layer_color_map.values(),
+            key=lambda item: float(item["weight"]),
+            reverse=True,
+        )
+        for item in layer_colors:
+            item.pop("weight", None)
+
+            pantone = item["pantone"]
+            summary_key = _pantone_key(pantone)
+            existing_summary = summary_by_pantone.get(summary_key)
+            if existing_summary is None:
+                summary_by_pantone[summary_key] = {
+                    "pantone": pantone,
                     "occurrences": 1,
                     "layers": [layer["name"]],
                 }
             else:
-                existing["occurrences"] += 1
-                if layer["name"] not in existing["layers"]:
-                    existing["layers"].append(layer["name"])
+                existing_summary["occurrences"] += 1
+                if layer["name"] not in existing_summary["layers"]:
+                    existing_summary["layers"].append(layer["name"])
 
         layer_payload.append(
             {
@@ -67,8 +90,8 @@ def suggest_from_file_bytes(
         )
 
     summary_colors = sorted(
-        summary.values(),
-        key=lambda item: (-int(item["occurrences"]), str(item["detected_hex"])),
+        summary_by_pantone.values(),
+        key=lambda item: (-int(item["occurrences"]), str(item["pantone"]["name"])),
     )
     return {
         "layer_count": len(layer_payload),
@@ -119,7 +142,7 @@ def _extract_layers_from_raster(image_bytes: bytes, filename: str) -> list[dict[
     ]
 
 
-def _extract_dominant_rgbs(image: Image.Image, max_colors: int = 8) -> list[tuple[int, int, int]]:
+def _extract_dominant_clusters(image: Image.Image, max_colors: int = 8) -> list[dict[str, Any]]:
     rgba = image.convert("RGBA")
     width, height = rgba.size
     pixel_count = width * height
@@ -153,18 +176,62 @@ def _extract_dominant_rgbs(image: Image.Image, max_colors: int = 8) -> list[tupl
     if not bins:
         return []
 
-    ordered = sorted(bins.values(), key=lambda values: values[0], reverse=True)
-    result: list[tuple[int, int, int]] = []
-    for bucket in ordered[:max_colors]:
-        total = bucket[0]
-        if total <= 0:
+    raw_clusters: list[dict[str, Any]] = []
+    for values in bins.values():
+        weight = values[0]
+        if weight <= 0:
             continue
-        result.append(
-            (
-                int(round(bucket[1] / total)),
-                int(round(bucket[2] / total)),
-                int(round(bucket[3] / total)),
-            )
+        raw_clusters.append(
+            {
+                "weight": weight,
+                "rgb": (
+                    int(round(values[1] / weight)),
+                    int(round(values[2] / weight)),
+                    int(round(values[3] / weight)),
+                ),
+            }
         )
-    return result
 
+    raw_clusters.sort(key=lambda item: float(item["weight"]), reverse=True)
+    merged: list[dict[str, Any]] = []
+    for cluster in raw_clusters:
+        rgb = cluster["rgb"]
+        merged_into_existing = False
+        for existing in merged:
+            if _rgb_distance2(existing["rgb"], rgb) <= SIMILAR_RGB_DISTANCE2:
+                existing["weight"] += cluster["weight"]
+                merged_into_existing = True
+                break
+        if not merged_into_existing:
+            merged.append({"weight": cluster["weight"], "rgb": rgb})
+
+    merged.sort(key=lambda item: float(item["weight"]), reverse=True)
+    total_weight = sum(float(item["weight"]) for item in merged)
+    if total_weight <= 0:
+        return []
+
+    filtered = [
+        item
+        for item in merged
+        if (float(item["weight"]) / total_weight) >= MIN_CLUSTER_RATIO
+    ]
+    if not filtered and merged:
+        filtered = [merged[0]]
+
+    return filtered[:max_colors]
+
+
+def _extract_dominant_rgbs(image: Image.Image, max_colors: int = 8) -> list[tuple[int, int, int]]:
+    return [item["rgb"] for item in _extract_dominant_clusters(image, max_colors=max_colors)]
+
+
+def _pantone_key(pantone: dict[str, Any]) -> str:
+    return f"{pantone.get('book_id','')}::{pantone.get('name','')}::{pantone.get('hex','')}"
+
+
+def _rgb_distance2(left: tuple[int, int, int], right: tuple[int, int, int]) -> int:
+    return (
+        (left[0] - right[0]) * (left[0] - right[0])
+        + (left[1] - right[1]) * (left[1] - right[1])
+        + (left[2] - right[2]) * (left[2] - right[2])
+    )

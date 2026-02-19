@@ -39,7 +39,7 @@ App web: `http://127.0.0.1:5000`
   - Devuelve:
     - colores detectados por capa
     - sugerencia Pantone por color
-    - resumen global de colores detectados
+    - resumen global de Pantones sugeridos
 - `POST /api/psd/suggest` (compatibilidad, subida directa)
 
 ## Notas
@@ -47,7 +47,7 @@ App web: `http://127.0.0.1:5000`
 - Soporta RGB/CMYK/Lab y conversion a HEX.
 - Buscador HEX con alcance por paleta.
 - Importador con drag & drop para PSD/JPG/PNG.
-- Carga de archivo por chunks para evitar limites de payload en producción.
+- Carga de archivo por chunks para evitar limites de payload en produccion.
 - Limite objetivo configurado: 150 MB.
 - Cache en memoria por `mtime`.
 

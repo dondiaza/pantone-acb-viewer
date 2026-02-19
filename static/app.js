@@ -496,7 +496,7 @@ function renderPsdResults(payload) {
       });
       const info = document.createElement("div");
       info.className = "code";
-      info.textContent = `Detectado ${item.detected_hex} en ${item.layers.join(", ")}`;
+      info.textContent = `Paleta ${item.pantone.book_title} | Capas: ${item.layers.join(", ")}`;
       card.querySelector(".card-body").appendChild(info);
       summaryCardsRoot.appendChild(card);
     }
@@ -627,4 +627,3 @@ function clearMessages() {
   const root = document.getElementById("messages");
   root.innerHTML = "";
 }
-
