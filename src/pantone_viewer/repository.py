@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
@@ -41,8 +42,13 @@ class CacheEntry:
 class ACBRepository:
     def __init__(self, acb_dir: str | Path) -> None:
         self.acb_dir = Path(acb_dir)
-        self.cache_dir = self.acb_dir.parent / ".cache"
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        preferred_cache_dir = self.acb_dir.parent / ".cache"
+        try:
+            preferred_cache_dir.mkdir(parents=True, exist_ok=True)
+            self.cache_dir = preferred_cache_dir
+        except Exception:
+            self.cache_dir = Path(tempfile.gettempdir()) / "pantone_viewer_cache"
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._cache: dict[str, CacheEntry] = {}
         self._id_to_path: dict[str, Path] = {}
         self._usage_score: dict[str, int] = {}
