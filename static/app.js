@@ -1,13 +1,53 @@
 "use strict";
 
 document.addEventListener("DOMContentLoaded", () => {
+  setupZoom();
+  setupHexSearch();
   loadBooks().catch((error) => {
     showMessage(`Unexpected error: ${error.message}`, true);
   });
 });
 
+function setupZoom() {
+  const zoomRange = document.getElementById("zoomRange");
+  const zoomLabel = document.getElementById("zoomLabel");
+
+  const applyZoom = () => {
+    const value = Number(zoomRange.value);
+    document.documentElement.style.setProperty("--card-min", `${value}px`);
+    zoomLabel.textContent = `${value}px`;
+  };
+
+  zoomRange.addEventListener("input", applyZoom);
+  applyZoom();
+}
+
+function setupHexSearch() {
+  const form = document.getElementById("hexSearchForm");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+
+    const input = document.getElementById("hexInput");
+    const query = input.value.trim();
+    if (!query) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/search?hex=${encodeURIComponent(query)}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || `HTTP ${response.status}`);
+      }
+      renderSearchResults(payload);
+    } catch (error) {
+      showMessage(`HEX search failed: ${error.message}`, true);
+    }
+  });
+}
+
 async function loadBooks() {
-  showMessage("Loading ACB books...");
+  showMessage("Loading swatch books...");
   const response = await fetch("/api/books");
   const payload = await response.json();
 
@@ -22,7 +62,7 @@ async function loadBooks() {
 
   const books = payload.books || [];
   if (books.length === 0) {
-    showMessage("No .acb files found in ./acb/", true);
+    showMessage("No .acb / .ase files found in ./acb/", true);
     return;
   }
 
@@ -48,7 +88,8 @@ function createBookDetails(book) {
   } else {
     const count = book.color_count ?? "?";
     const space = book.colorspace || "Unknown";
-    meta.textContent = `${count} colors · ${space}`;
+    const format = book.format || "UNK";
+    meta.textContent = `${count} colors | ${space} | ${format}`;
   }
   summary.appendChild(meta);
   details.appendChild(summary);
@@ -69,10 +110,7 @@ function createBookDetails(book) {
 
   if (!book.error) {
     details.addEventListener("toggle", async () => {
-      if (!details.open) {
-        return;
-      }
-      if (details.dataset.loaded === "true") {
+      if (!details.open || details.dataset.loaded === "true") {
         return;
       }
 
@@ -118,43 +156,105 @@ function renderColorGrid(colors) {
   }
 
   for (const color of colors) {
-    const card = document.createElement("article");
-    card.className = "card";
-
-    const swatch = document.createElement("div");
-    swatch.className = "swatch";
-    swatch.style.background = color.hex;
-    swatch.title = color.hex;
-    card.appendChild(swatch);
-
-    const body = document.createElement("div");
-    body.className = "card-body";
-
-    const name = document.createElement("div");
-    name.className = "name";
-    name.textContent = color.name;
-    body.appendChild(name);
-
-    const line = document.createElement("div");
-    line.className = "line";
-    const hex = document.createElement("span");
-    hex.className = "hex";
-    hex.textContent = color.hex;
-    line.appendChild(hex);
-
-    if (color.code) {
-      const code = document.createElement("span");
-      code.className = "code";
-      code.textContent = color.code;
-      line.appendChild(code);
-    }
-
-    body.appendChild(line);
-    card.appendChild(body);
-    grid.appendChild(card);
+    grid.appendChild(createColorCard(color));
   }
 
   return grid;
+}
+
+function createColorCard(color) {
+  const card = document.createElement("article");
+  card.className = "card";
+
+  const swatch = document.createElement("div");
+  swatch.className = "swatch";
+  swatch.style.background = color.hex;
+  swatch.title = color.hex;
+  card.appendChild(swatch);
+
+  const body = document.createElement("div");
+  body.className = "card-body";
+
+  const name = document.createElement("div");
+  name.className = "name";
+  name.textContent = color.name;
+  body.appendChild(name);
+
+  const line = document.createElement("div");
+  line.className = "line";
+
+  const hex = document.createElement("span");
+  hex.className = "hex";
+  hex.textContent = color.hex;
+  line.appendChild(hex);
+
+  if (color.code) {
+    const code = document.createElement("span");
+    code.className = "code";
+    code.textContent = color.code;
+    line.appendChild(code);
+  }
+
+  body.appendChild(line);
+  card.appendChild(body);
+  return card;
+}
+
+function renderSearchResults(payload) {
+  const section = document.getElementById("searchResults");
+  const summary = document.getElementById("searchSummary");
+  const cardsRoot = document.getElementById("searchCards");
+  const textList = document.getElementById("searchTextList");
+
+  section.hidden = false;
+  cardsRoot.innerHTML = "";
+  textList.innerHTML = "";
+
+  const exact = payload.exact_matches || [];
+  const nearest = payload.nearest || [];
+
+  summary.textContent = `${payload.query} | exact matches: ${payload.exact_count}`;
+
+  const cardSource = exact.length > 0 ? exact : nearest.slice(0, 48);
+  for (const item of cardSource) {
+    const card = createColorCard(item);
+    const meta = document.createElement("div");
+    meta.className = "code";
+    meta.textContent = item.book_title;
+    card.querySelector(".card-body").appendChild(meta);
+    cardsRoot.appendChild(card);
+  }
+
+  const textSource = exact.length > 0 ? exact : nearest.slice(0, 150);
+  for (const item of textSource) {
+    const line = document.createElement("div");
+    line.className = "search-line";
+
+    const name = document.createElement("strong");
+    name.textContent = item.name;
+    line.appendChild(name);
+
+    const hex = document.createElement("span");
+    hex.className = "hex";
+    hex.textContent = ` ${item.hex} `;
+    line.appendChild(hex);
+
+    const path = document.createElement("span");
+    path.className = "path";
+    path.textContent = `(${item.book_title})`;
+    line.appendChild(path);
+
+    textList.appendChild(line);
+  }
+
+  if (textSource.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "message";
+    empty.textContent = "No matches.";
+    textList.appendChild(empty);
+  }
+
+  clearMessages();
 }
 
 function showMessage(text, isError = false) {
@@ -171,4 +271,3 @@ function clearMessages() {
   const root = document.getElementById("messages");
   root.innerHTML = "";
 }
-

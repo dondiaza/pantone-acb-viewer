@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 
 from .repository import ACBRepository
 
@@ -44,5 +44,18 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
             return jsonify({"error": str(exc)}), 422
         return jsonify(book)
 
-    return app
+    @app.get("/api/search")
+    def search_by_hex():
+        query = request.args.get("hex", "")
+        if not query:
+            return jsonify({"error": "Missing query parameter: hex"}), 400
 
+        try:
+            payload = repository.search_by_hex(query)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 500
+        return jsonify(payload)
+
+    return app

@@ -25,19 +25,24 @@ class ColorRecord:
 
 @dataclass(slots=True)
 class Book:
-    version: int
-    book_id: int
-    title: str
-    prefix: str
-    suffix: str
-    description: str
-    color_count: int
-    page_size: int
-    page_selector_offset: int
-    colorspace: int
-    colorspace_name: str
-    colors: list[ColorRecord]
+    version: int = 0
+    book_id: int = 0
+    title: str = ""
+    prefix: str = ""
+    suffix: str = ""
+    description: str = ""
+    color_count: int = 0
+    page_size: int = 0
+    page_selector_offset: int = 0
+    colorspace: int = -1
+    colorspace_name: str = "Unknown"
+    colors: list[ColorRecord] | None = None
+    format: str = "ACB"
     filename: str = ""
+
+    def __post_init__(self) -> None:
+        if self.colors is None:
+            self.colors = []
 
 
 class ByteReader:
@@ -66,6 +71,11 @@ class ByteReader:
 
     def read_u32(self, context: str) -> int:
         return int.from_bytes(self.read_bytes(4, context), "big")
+
+    def read_f32(self, context: str) -> float:
+        import struct
+
+        return struct.unpack(">f", self.read_bytes(4, context))[0]
 
     def peek_u32(self, offset: int = 0) -> int | None:
         start = self.pos + offset
@@ -152,6 +162,7 @@ def parse_acb_bytes(data: bytes, source: str = "<memory>") -> Book:
         colorspace=colorspace,
         colorspace_name=colorspace_name,
         colors=colors,
+        format="ACB",
     )
 
 
@@ -180,4 +191,3 @@ def _looks_like_next_record(reader: ByteReader, offset: int) -> bool:
 
     required = 4 + (name_length * 2)
     return required <= remaining_after_offset
-

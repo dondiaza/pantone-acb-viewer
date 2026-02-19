@@ -10,12 +10,29 @@
     <main class="layout">
       <header class="header">
         <h1>Pantone ACB Viewer</h1>
-        <p class="hint">Loads Adobe Color Book (*.acb) files from <code>./acb/</code></p>
+        <p class="hint">Loads Adobe swatch books (*.acb, *.ase) from <code>./acb/</code></p>
       </header>
+      <section class="toolbar">
+        <label class="zoom-control" for="zoomRange">
+          Grid zoom
+          <input id="zoomRange" type="range" min="120" max="280" step="10" value="210" />
+          <span id="zoomLabel" class="zoom-label">210px</span>
+        </label>
+        <form id="hexSearchForm" class="search-form">
+          <label for="hexInput">HEX search</label>
+          <input id="hexInput" name="hex" type="text" placeholder="#E4002B" />
+          <button type="submit">Find Pantone</button>
+        </form>
+      </section>
       <section id="messages" class="messages"></section>
+      <section id="searchResults" class="search-results" hidden>
+        <h2>HEX Results</h2>
+        <p id="searchSummary" class="hint"></p>
+        <div id="searchCards" class="color-grid"></div>
+        <div id="searchTextList" class="search-text-list"></div>
+      </section>
       <section id="books" class="books"></section>
     </main>
     <script src="{{ url_for('static', filename='app.js') }}" defer></script>
   </body>
 </html>
-
