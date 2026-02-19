@@ -75,7 +75,7 @@ App web: `http://127.0.0.1:5000`
 - Incluye selector opcional de paleta para buscar por HEX. Por defecto usa `PANTONE Solid Coated-V4`.
 - En PSD, si no hay match exacto, devuelve el Pantone mas cercano.
 - En PSD puedes arrastrar y soltar (`drag & drop`) o seleccionar archivo.
-- En Vercel se recomienda PSD <= 4 MB por limites de subida en funciones serverless.
+- Limite configurado para subida PSD: 150 MB.
 - Cache en memoria por libro con invalidacion por `mtime`.
 - Si un archivo falla al parsear, se reporta en `/api/books` sin romper la app.
 

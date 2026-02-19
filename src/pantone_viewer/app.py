@@ -19,7 +19,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
         template_folder=str(project_root / "templates"),
         static_folder=str(project_root / "static"),
     )
-    app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
+    app.config["MAX_CONTENT_LENGTH"] = 150 * 1024 * 1024
 
     repository = ACBRepository(configured_acb_dir)
 
@@ -43,7 +43,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
         try:
             book = repository.get_book_details(book_id)
         except KeyError:
-            return jsonify({"error": f"Book not found: {book_id}"}), 404
+            return jsonify({"error": f"Paleta no encontrada: {book_id}"}), 404
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 500
         except RuntimeError as exc:
@@ -55,14 +55,14 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
         query = request.args.get("hex", "")
         book_id = request.args.get("book_id", "").strip() or None
         if not query:
-            return jsonify({"error": "Missing query parameter: hex"}), 400
+            return jsonify({"error": "Falta el parametro de consulta: hex"}), 400
 
         try:
             payload = repository.search_by_hex(query, book_id=book_id)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         except KeyError:
-            return jsonify({"error": f"Book not found: {book_id}"}), 404
+            return jsonify({"error": f"Paleta no encontrada: {book_id}"}), 404
         except FileNotFoundError as exc:
             return jsonify({"error": str(exc)}), 500
         return jsonify(payload)
@@ -71,15 +71,15 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
     def suggest_from_psd():
         file = request.files.get("file")
         if file is None:
-            return jsonify({"error": "Missing file field: file"}), 400
+            return jsonify({"error": "Falta el campo de archivo: file"}), 400
 
         file_bytes = file.read()
         if not file_bytes:
-            return jsonify({"error": "Uploaded PSD is empty"}), 400
+            return jsonify({"error": "El PSD subido esta vacio"}), 400
 
         palette_id = request.form.get("book_id", "").strip() or repository.get_default_palette_id()
         if not palette_id:
-            return jsonify({"error": "No palette available"}), 400
+            return jsonify({"error": "No hay paletas disponibles"}), 400
 
         try:
             payload = suggest_from_psd_bytes(file_bytes, repository, palette_id)
@@ -87,15 +87,15 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
             payload["palette_title"] = repository.get_palette_title(palette_id)
             payload["filename"] = file.filename
         except KeyError:
-            return jsonify({"error": f"Book not found: {palette_id}"}), 404
+            return jsonify({"error": f"Paleta no encontrada: {palette_id}"}), 404
         except RuntimeError as exc:
             return jsonify({"error": str(exc)}), 422
         except Exception as exc:
-            return jsonify({"error": f"Failed to parse PSD: {exc}"}), 422
+            return jsonify({"error": f"No se pudo procesar el PSD: {exc}"}), 422
         return jsonify(payload)
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_file_too_large(_exc: RequestEntityTooLarge):
-        return jsonify({"error": "Uploaded file is too large for server limits."}), 413
+        return jsonify({"error": "El archivo subido supera el limite permitido por el servidor."}), 413
 
     return app

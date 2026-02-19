@@ -142,7 +142,7 @@ class ACBRepository:
             scope_label = (
                 scoped_books[0][1].stem
                 if len(scoped_books) == 1
-                else f"All palettes ({len(scoped_books)})"
+                else f"Todas las paletas ({len(scoped_books)})"
             )
             return {
                 "query": normalized_hex,
@@ -164,7 +164,7 @@ class ACBRepository:
                     nearest = (distance, color)
 
             if nearest is None:
-                raise RuntimeError(f"No colors available in palette: {book_id}")
+                raise RuntimeError(f"No hay colores disponibles en la paleta: {book_id}")
 
             distance, color = nearest
             return {
@@ -203,10 +203,10 @@ class ACBRepository:
     def _refresh_id_map(self) -> str | None:
         if not self.acb_dir.exists():
             self._id_to_path = {}
-            return f"Swatch directory not found: {self.acb_dir}"
+            return f"No se encontro el directorio de muestras: {self.acb_dir}"
         if not self.acb_dir.is_dir():
             self._id_to_path = {}
-            return f"Swatch path is not a directory: {self.acb_dir}"
+            return f"La ruta de muestras no es un directorio: {self.acb_dir}"
 
         files = sorted(
             [*self.acb_dir.glob("*.acb"), *self.acb_dir.glob("*.ase")],
@@ -236,7 +236,7 @@ class ACBRepository:
             elif suffix == ".ase":
                 book = parse_ase(path)
             else:
-                raise ValueError(f"Unsupported file extension: {path.suffix}")
+                raise ValueError(f"Extension de archivo no soportada: {path.suffix}")
 
             entry = CacheEntry(path=path, mtime=mtime, book=book, error=None)
         except Exception as exc:
@@ -288,7 +288,7 @@ def _normalize_hex(value: str) -> str:
         stripped = "".join(ch * 2 for ch in stripped)
 
     if len(stripped) != 6 or any(ch not in "0123456789ABCDEF" for ch in stripped):
-        raise ValueError("Invalid HEX format. Use #RRGGBB or #RGB.")
+        raise ValueError("Formato HEX invalido. Usa #RRGGBB o #RGB.")
 
     return f"#{stripped}"
 
@@ -304,4 +304,3 @@ def _rgb_distance(left: tuple[int, int, int], right: tuple[int, int, int]) -> in
         + (left[1] - right[1]) * (left[1] - right[1])
         + (left[2] - right[2]) * (left[2] - right[2])
     )
-

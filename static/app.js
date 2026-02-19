@@ -1,6 +1,6 @@
 "use strict";
 
-const MAX_PSD_UPLOAD_BYTES = 4 * 1024 * 1024;
+const MAX_PSD_UPLOAD_BYTES = 150 * 1024 * 1024;
 
 const state = {
   books: [],
@@ -14,7 +14,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupHexSearch();
   setupPsdImport();
   loadBooks().catch((error) => {
-    showMessage(`Unexpected error: ${error.message}`, true);
+    showMessage(`Error inesperado: ${error.message}`, true);
   });
 });
 
@@ -66,7 +66,7 @@ function setupHexSearch() {
       }
       renderSearchResults(payload);
     } catch (error) {
-      showMessage(`HEX search failed: ${error.message}`, true);
+      showMessage(`Fallo en la busqueda HEX: ${error.message}`, true);
     }
   });
 }
@@ -80,12 +80,12 @@ function setupPsdImport() {
   const setFile = (file) => {
     if (!file) {
       state.psdFile = null;
-      fileLabel.textContent = "No file selected";
+      fileLabel.textContent = "Ningun archivo seleccionado";
       return;
     }
 
     if (!file.name.toLowerCase().endsWith(".psd")) {
-      showMessage("Only .psd files are supported.", true);
+      showMessage("Solo se admiten archivos .psd.", true);
       return;
     }
 
@@ -97,7 +97,7 @@ function setupPsdImport() {
       dt.items.add(file);
       fileInput.files = dt.files;
     } catch {
-      // Best effort to mirror drop selection in hidden input.
+      // Mejor esfuerzo para reflejar el archivo soltado en el input oculto.
     }
   };
 
@@ -142,13 +142,13 @@ function setupPsdImport() {
     const paletteSelect = document.getElementById("psdBookSelect");
     const file = state.psdFile;
     if (!file) {
-      showMessage("Select or drop a PSD file first.", true);
+      showMessage("Primero selecciona o arrastra un archivo PSD.", true);
       return;
     }
 
     if (file.size > MAX_PSD_UPLOAD_BYTES) {
       showMessage(
-        `PSD too large for production upload (${prettyBytes(file.size)}). Limit: ${prettyBytes(MAX_PSD_UPLOAD_BYTES)}.`,
+        `El PSD es demasiado grande (${prettyBytes(file.size)}). Limite: ${prettyBytes(MAX_PSD_UPLOAD_BYTES)}.`,
         true,
       );
       return;
@@ -161,7 +161,7 @@ function setupPsdImport() {
     }
 
     try {
-      showMessage("Analyzing PSD layers...");
+      showMessage("Analizando capas del PSD...");
       const response = await fetch("/api/psd/suggest", { method: "POST", body });
       const payload = await parseApiResponse(response);
       if (!response.ok) {
@@ -170,13 +170,13 @@ function setupPsdImport() {
       renderPsdResults(payload);
       clearMessages();
     } catch (error) {
-      showMessage(`PSD analysis failed: ${error.message}`, true);
+      showMessage(`Fallo en el analisis del PSD: ${error.message}`, true);
     }
   });
 }
 
 async function loadBooks() {
-  showMessage("Loading swatch books...");
+  showMessage("Cargando bibliotecas de muestras...");
   const response = await fetch("/api/books");
   const payload = await parseApiResponse(response);
 
@@ -191,7 +191,7 @@ async function loadBooks() {
 
   const books = payload.books || [];
   if (books.length === 0) {
-    showMessage("No .acb / .ase files found in ./acb/", true);
+    showMessage("No se encontraron archivos .acb / .ase en ./acb/", true);
     return;
   }
 
@@ -229,7 +229,7 @@ function populatePaletteSelectors(books, defaultId) {
 
   const allOption = document.createElement("option");
   allOption.value = "";
-  allOption.textContent = "All palettes";
+  allOption.textContent = "Todas las paletas";
   searchSelect.appendChild(allOption);
 
   for (const book of books) {
@@ -260,12 +260,12 @@ function createBookDetails(book) {
   const meta = document.createElement("span");
   meta.className = "summary-meta";
   if (book.error) {
-    meta.innerHTML = `<span class="badge-error">parse error</span>`;
+    meta.innerHTML = `<span class="badge-error">error de parseo</span>`;
   } else {
     const count = book.color_count ?? "?";
-    const space = book.colorspace || "Unknown";
+    const space = book.colorspace || "Desconocido";
     const format = book.format || "UNK";
-    meta.textContent = `${count} colors | ${space} | ${format}`;
+    meta.textContent = `${count} colores | ${space} | ${format}`;
   }
   summary.appendChild(meta);
   details.appendChild(summary);
@@ -280,7 +280,7 @@ function createBookDetails(book) {
     body.hidden = false;
     body.appendChild(error);
   } else {
-    body.textContent = "Open to load colors...";
+    body.textContent = "Abre para cargar colores...";
   }
   details.appendChild(body);
 
@@ -291,7 +291,7 @@ function createBookDetails(book) {
       }
 
       body.hidden = false;
-      body.textContent = "Loading colors...";
+      body.textContent = "Cargando colores...";
       try {
         const loaded = await fetchBook(book.id);
         body.innerHTML = "";
@@ -301,7 +301,7 @@ function createBookDetails(book) {
         body.innerHTML = "";
         const failure = document.createElement("div");
         failure.className = "message error";
-        failure.textContent = `Failed to load ${book.filename}: ${error.message}`;
+        failure.textContent = `No se pudo cargar ${book.filename}: ${error.message}`;
         body.appendChild(failure);
       }
     });
@@ -326,7 +326,7 @@ function renderColorGrid(colors) {
   if (colors.length === 0) {
     const empty = document.createElement("div");
     empty.className = "message";
-    empty.textContent = "No valid colors in this book.";
+    empty.textContent = "No hay colores validos en esta biblioteca.";
     grid.appendChild(empty);
     return grid;
   }
@@ -389,7 +389,7 @@ function renderSearchResults(payload) {
   const exact = payload.exact_matches || [];
   const nearest = payload.nearest || [];
 
-  summary.textContent = `${payload.query} | scope: ${payload.scope} | exact matches: ${payload.exact_count}`;
+  summary.textContent = `${payload.query} | ambito: ${payload.scope} | coincidencias exactas: ${payload.exact_count}`;
 
   const cardSource = exact.length > 0 ? exact : nearest.slice(0, 48);
   for (const item of cardSource) {
@@ -426,7 +426,7 @@ function renderSearchResults(payload) {
   if (textSource.length === 0) {
     const empty = document.createElement("div");
     empty.className = "message";
-    empty.textContent = "No matches.";
+    empty.textContent = "Sin coincidencias.";
     textList.appendChild(empty);
   }
 }
@@ -438,13 +438,13 @@ function renderPsdResults(payload) {
 
   section.hidden = false;
   cardsRoot.innerHTML = "";
-  summary.textContent = `${payload.filename || "PSD"} | palette: ${payload.palette_title} | layers analyzed: ${payload.layer_count}`;
+  summary.textContent = `${payload.filename || "PSD"} | paleta: ${payload.palette_title} | capas analizadas: ${payload.layer_count}`;
 
   const layers = payload.layers || [];
   if (layers.length === 0) {
     const empty = document.createElement("div");
     empty.className = "message";
-    empty.textContent = "No pixel layers found.";
+    empty.textContent = "No se encontraron capas de pixeles.";
     cardsRoot.appendChild(empty);
     return;
   }
@@ -461,16 +461,16 @@ function createPsdCard(layer) {
   const swatches = document.createElement("div");
   swatches.className = "psd-swatches";
 
-  swatches.appendChild(createPsdSwatch("Layer", layer.detected_hex));
+  swatches.appendChild(createPsdSwatch("Capa", layer.detected_hex));
   swatches.appendChild(createPsdSwatch("Pantone", layer.pantone.hex));
 
   const meta = document.createElement("div");
   meta.className = "psd-meta";
   meta.innerHTML = `
     <strong>${escapeHtml(layer.layer_name)}</strong><br />
-    Detected: <span class="hex">${layer.detected_hex}</span><br />
-    Suggested: <strong>${escapeHtml(layer.pantone.name)}</strong> <span class="hex">${layer.pantone.hex}</span><br />
-    Palette: ${escapeHtml(layer.pantone.book_title)}
+    Detectado: <span class="hex">${layer.detected_hex}</span><br />
+    Sugerido: <strong>${escapeHtml(layer.pantone.name)}</strong> <span class="hex">${layer.pantone.hex}</span><br />
+    Paleta: ${escapeHtml(layer.pantone.book_title)}
   `;
 
   card.appendChild(swatches);
@@ -514,7 +514,7 @@ function formatApiError(status, errorText) {
   const low = clean.toLowerCase();
 
   if (status === 413 || low.includes("request entity too large")) {
-    return `File too large for upload on this deployment. Keep PSD below ${prettyBytes(MAX_PSD_UPLOAD_BYTES)}.`;
+    return `Archivo demasiado grande para esta subida. Mantener PSD por debajo de ${prettyBytes(MAX_PSD_UPLOAD_BYTES)}.`;
   }
 
   if (clean.length === 0) {
