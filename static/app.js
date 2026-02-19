@@ -1,8 +1,11 @@
 "use strict";
 
+const MAX_PSD_UPLOAD_BYTES = 4 * 1024 * 1024;
+
 const state = {
   books: [],
   defaultPaletteId: null,
+  psdFile: null,
 };
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -57,7 +60,7 @@ function setupHexSearch() {
 
     try {
       const response = await fetch(`/api/search?${params.toString()}`);
-      const payload = await response.json();
+      const payload = await parseApiResponse(response);
       if (!response.ok) {
         throw new Error(payload.error || `HTTP ${response.status}`);
       }
@@ -70,14 +73,84 @@ function setupHexSearch() {
 
 function setupPsdImport() {
   const form = document.getElementById("psdForm");
+  const fileInput = document.getElementById("psdFileInput");
+  const fileLabel = document.getElementById("psdFileName");
+  const dropZone = document.getElementById("psdDropZone");
+
+  const setFile = (file) => {
+    if (!file) {
+      state.psdFile = null;
+      fileLabel.textContent = "No file selected";
+      return;
+    }
+
+    if (!file.name.toLowerCase().endsWith(".psd")) {
+      showMessage("Only .psd files are supported.", true);
+      return;
+    }
+
+    state.psdFile = file;
+    fileLabel.textContent = `${file.name} (${prettyBytes(file.size)})`;
+
+    try {
+      const dt = new DataTransfer();
+      dt.items.add(file);
+      fileInput.files = dt.files;
+    } catch {
+      // Best effort to mirror drop selection in hidden input.
+    }
+  };
+
+  fileInput.addEventListener("change", () => {
+    const file = fileInput.files && fileInput.files[0];
+    setFile(file || null);
+  });
+
+  dropZone.addEventListener("click", () => fileInput.click());
+  dropZone.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      fileInput.click();
+    }
+  });
+
+  ["dragenter", "dragover"].forEach((eventName) => {
+    dropZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      dropZone.classList.add("dragover");
+    });
+  });
+
+  ["dragleave", "drop"].forEach((eventName) => {
+    dropZone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("dragover");
+    });
+  });
+
+  dropZone.addEventListener("drop", (event) => {
+    const files = event.dataTransfer?.files;
+    if (!files || files.length === 0) {
+      return;
+    }
+    setFile(files[0]);
+  });
+
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const fileInput = document.getElementById("psdFileInput");
     const paletteSelect = document.getElementById("psdBookSelect");
-    const file = fileInput.files && fileInput.files[0];
+    const file = state.psdFile;
     if (!file) {
-      showMessage("Select a PSD file first.", true);
+      showMessage("Select or drop a PSD file first.", true);
+      return;
+    }
+
+    if (file.size > MAX_PSD_UPLOAD_BYTES) {
+      showMessage(
+        `PSD too large for production upload (${prettyBytes(file.size)}). Limit: ${prettyBytes(MAX_PSD_UPLOAD_BYTES)}.`,
+        true,
+      );
       return;
     }
 
@@ -90,9 +163,9 @@ function setupPsdImport() {
     try {
       showMessage("Analyzing PSD layers...");
       const response = await fetch("/api/psd/suggest", { method: "POST", body });
-      const payload = await response.json();
+      const payload = await parseApiResponse(response);
       if (!response.ok) {
-        throw new Error(payload.error || `HTTP ${response.status}`);
+        throw new Error(formatApiError(response.status, payload.error || ""));
       }
       renderPsdResults(payload);
       clearMessages();
@@ -105,7 +178,7 @@ function setupPsdImport() {
 async function loadBooks() {
   showMessage("Loading swatch books...");
   const response = await fetch("/api/books");
-  const payload = await response.json();
+  const payload = await parseApiResponse(response);
 
   const booksRoot = document.getElementById("books");
   booksRoot.innerHTML = "";
@@ -239,7 +312,7 @@ function createBookDetails(book) {
 
 async function fetchBook(bookId) {
   const response = await fetch(`/api/books/${encodeURIComponent(bookId)}`);
-  const payload = await response.json();
+  const payload = await parseApiResponse(response);
   if (!response.ok) {
     throw new Error(payload.error || `HTTP ${response.status}`);
   }
@@ -421,6 +494,45 @@ function createPsdSwatch(label, hex) {
   wrap.appendChild(swatch);
   wrap.appendChild(text);
   return wrap;
+}
+
+async function parseApiResponse(response) {
+  const text = await response.text();
+  if (!text) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { error: text };
+  }
+}
+
+function formatApiError(status, errorText) {
+  const clean = (errorText || "").trim();
+  const low = clean.toLowerCase();
+
+  if (status === 413 || low.includes("request entity too large")) {
+    return `File too large for upload on this deployment. Keep PSD below ${prettyBytes(MAX_PSD_UPLOAD_BYTES)}.`;
+  }
+
+  if (clean.length === 0) {
+    return `HTTP ${status}`;
+  }
+
+  return clean;
+}
+
+function prettyBytes(bytes) {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const kb = bytes / 1024;
+  if (kb < 1024) {
+    return `${kb.toFixed(1)} KB`;
+  }
+  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 function escapeHtml(value) {

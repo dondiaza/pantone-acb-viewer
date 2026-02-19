@@ -77,6 +77,12 @@ body {
   align-items: center;
 }
 
+.psd-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+
 .search-form input,
 .search-form select,
 .psd-form input,
@@ -102,6 +108,22 @@ body {
   background: #fff;
   color: #23324a;
   border-color: #9cadc4;
+}
+
+.psd-dropzone {
+  grid-column: 1 / -1;
+  border: 2px dashed #9cadc4;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.psd-dropzone.dragover {
+  border-color: #23324a;
+  background: #eef4ff;
 }
 
 .message {
@@ -301,5 +323,8 @@ body {
   .psd-form {
     width: 100%;
   }
-}
 
+  .psd-form {
+    grid-template-columns: 1fr;
+  }
+}

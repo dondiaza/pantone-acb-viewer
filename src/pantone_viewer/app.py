@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from .psd_suggester import suggest_from_psd_bytes
 from .repository import ACBRepository
@@ -18,6 +19,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
         template_folder=str(project_root / "templates"),
         static_folder=str(project_root / "static"),
     )
+    app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024
 
     repository = ACBRepository(configured_acb_dir)
 
@@ -91,5 +93,9 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
         except Exception as exc:
             return jsonify({"error": f"Failed to parse PSD: {exc}"}), 422
         return jsonify(payload)
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def handle_file_too_large(_exc: RequestEntityTooLarge):
+        return jsonify({"error": "Uploaded file is too large for server limits."}), 413
 
     return app

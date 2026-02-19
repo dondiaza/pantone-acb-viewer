@@ -44,7 +44,11 @@
         <h2>PSD Importer</h2>
         <form id="psdForm" class="psd-form">
           <label for="psdFileInput">PSD file</label>
-          <input id="psdFileInput" name="file" type="file" accept=".psd" />
+          <input id="psdFileInput" name="file" type="file" accept=".psd" hidden />
+          <div id="psdDropZone" class="psd-dropzone" role="button" tabindex="0">
+            Drag & drop PSD here, or click to select
+          </div>
+          <div id="psdFileName" class="hint">No file selected</div>
           <label for="psdBookSelect">Suggest with palette</label>
           <select id="psdBookSelect" name="book_id"></select>
           <button type="submit">Analyze PSD</button>
@@ -63,4 +67,3 @@
     <script src="{{ url_for('static', filename='app.js') }}" defer></script>
   </body>
 </html>
-
