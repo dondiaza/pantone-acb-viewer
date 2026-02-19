@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ def suggest_from_file_bytes(
     noise: float = 35.0,
     include_hidden: bool = False,
     include_overlay: bool = True,
+    ignore_background: bool = False,
 ) -> dict[str, Any]:
     extension = Path(filename).suffix.lower()
     if extension not in SUPPORTED_IMAGE_EXTENSIONS:
@@ -38,45 +40,32 @@ def suggest_from_file_bytes(
     summary_by_pantone: dict[str, dict[str, Any]] = {}
 
     for layer in layers:
-        color_clusters = _extract_dominant_clusters(layer["image"], noise=noise)
+        color_clusters = _extract_dominant_clusters(
+            image=layer["image"],
+            noise=noise,
+            ignore_background=ignore_background,
+        )
         if not color_clusters:
             continue
 
-        layer_color_map: dict[str, dict[str, Any]] = {}
+        layer_colors: list[dict[str, Any]] = []
         for cluster in color_clusters:
             rgb = cluster["rgb"]
             detected_hex = rgb_to_hex(rgb)
             nearest = repository.nearest_in_book(rgb, palette_id)
-            pantone_key = _pantone_key(nearest)
-
-            existing_layer_color = layer_color_map.get(pantone_key)
-            if existing_layer_color is None:
-                layer_color_map[pantone_key] = {
+            layer_colors.append(
+                {
                     "detected_hex": detected_hex,
                     "pantone": nearest,
                     "weight": cluster["weight"],
                 }
-            else:
-                previous_weight = float(existing_layer_color["weight"])
-                existing_layer_color["weight"] += cluster["weight"]
-                if float(cluster["weight"]) > previous_weight:
-                    existing_layer_color["detected_hex"] = detected_hex
-                    existing_layer_color["pantone"] = nearest
+            )
 
-        layer_colors = sorted(
-            layer_color_map.values(),
-            key=lambda item: float(item["weight"]),
-            reverse=True,
-        )
-        for item in layer_colors:
-            item.pop("weight", None)
-
-            pantone = item["pantone"]
-            summary_key = _pantone_key(pantone)
+            summary_key = _pantone_key(nearest)
             existing_summary = summary_by_pantone.get(summary_key)
             if existing_summary is None:
                 summary_by_pantone[summary_key] = {
-                    "pantone": pantone,
+                    "pantone": nearest,
                     "occurrences": 1,
                     "layers": [layer["name"]],
                 }
@@ -85,10 +74,15 @@ def suggest_from_file_bytes(
                 if layer["name"] not in existing_summary["layers"]:
                     existing_summary["layers"].append(layer["name"])
 
+        layer_colors.sort(key=lambda item: float(item["weight"]), reverse=True)
+        for item in layer_colors:
+            item.pop("weight", None)
+
         layer_payload.append(
             {
                 "layer_name": layer["name"],
                 "visible": bool(layer.get("visible", True)),
+                "preview_data_url": layer.get("preview_data_url"),
                 "colors": layer_colors,
             }
         )
@@ -105,6 +99,7 @@ def suggest_from_file_bytes(
             "noise": _normalize_noise(noise),
             "include_hidden": include_hidden,
             "include_overlay": include_overlay,
+            "ignore_background": ignore_background,
         },
     }
 
@@ -130,7 +125,6 @@ def _extract_layers_from_psd(
         rendered = None
         try:
             if include_overlay:
-                # `composite(force=True)` intenta incluir efectos/estilos de capa (e.g. Color Overlay).
                 rendered = layer.composite(force=True)
             else:
                 rendered = layer.topil()
@@ -142,12 +136,14 @@ def _extract_layers_from_psd(
         if rendered is None:
             continue
 
+        image = rendered.convert("RGBA")
         index += 1
         layers.append(
             {
                 "name": layer.name or f"Capa {index}",
                 "visible": is_visible,
-                "image": rendered.convert("RGBA"),
+                "image": image,
+                "preview_data_url": _to_preview_data_url(image),
             }
         )
     return layers
@@ -160,18 +156,21 @@ def _extract_layers_from_raster(image_bytes: bytes, filename: str) -> list[dict[
             "name": f"Imagen {Path(filename).name}",
             "visible": True,
             "image": image,
+            "preview_data_url": _to_preview_data_url(image),
         }
     ]
 
 
-def _extract_dominant_clusters(image: Image.Image, noise: float) -> list[dict[str, Any]]:
-    max_colors, similar_rgb_distance2, min_cluster_ratio = _noise_profile(noise)
+def _extract_dominant_clusters(
+    image: Image.Image, noise: float, ignore_background: bool
+) -> list[dict[str, Any]]:
+    max_colors, similar_rgb_distance2, min_cluster_ratio, quant_shift = _noise_profile(noise)
 
     rgba = image.convert("RGBA")
     width, height = rgba.size
     pixel_count = width * height
 
-    max_pixels = 180_000
+    max_pixels = 220_000
     if pixel_count > max_pixels:
         scale = (max_pixels / float(pixel_count)) ** 0.5
         width = max(1, int(width * scale))
@@ -185,9 +184,12 @@ def _extract_dominant_clusters(image: Image.Image, noise: float) -> list[dict[st
             if a < 16:
                 continue
 
-            key = (r >> 3, g >> 3, b >> 3)
-            weight = a / 255.0
+            if quant_shift > 0:
+                key = (r >> quant_shift, g >> quant_shift, b >> quant_shift)
+            else:
+                key = (r, g, b)
 
+            weight = a / 255.0
             bucket = bins.get(key)
             if bucket is None:
                 bins[key] = [weight, r * weight, g * weight, b * weight]
@@ -234,31 +236,69 @@ def _extract_dominant_clusters(image: Image.Image, noise: float) -> list[dict[st
     if total_weight <= 0:
         return []
 
-    filtered = [
-        item
-        for item in merged
-        if (float(item["weight"]) / total_weight) >= min_cluster_ratio
-    ]
-    if not filtered and merged:
-        filtered = [merged[0]]
+    with_ratio = []
+    for item in merged:
+        ratio = float(item["weight"]) / total_weight
+        with_ratio.append({"weight": item["weight"], "rgb": item["rgb"], "ratio": ratio})
 
-    return filtered[:max_colors]
+    if ignore_background:
+        with_ratio = _remove_background_cluster(with_ratio)
+        if not with_ratio:
+            return []
+
+    filtered = [item for item in with_ratio if float(item["ratio"]) >= min_cluster_ratio]
+    if not filtered and with_ratio:
+        filtered = [with_ratio[0]]
+
+    return [
+        {"weight": item["weight"], "rgb": item["rgb"]}
+        for item in filtered[:max_colors]
+    ]
 
 
 def _extract_dominant_rgbs(image: Image.Image, max_colors: int = 8) -> list[tuple[int, int, int]]:
-    return [item["rgb"] for item in _extract_dominant_clusters(image, noise=100.0)[:max_colors]]
+    clusters = _extract_dominant_clusters(
+        image=image,
+        noise=100.0,
+        ignore_background=False,
+    )
+    return [item["rgb"] for item in clusters[:max_colors]]
 
 
-def _noise_profile(noise: float) -> tuple[int, int, float]:
+def _remove_background_cluster(clusters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not clusters:
+        return clusters
+
+    top = clusters[0]
+    if top["ratio"] >= 0.95:
+        return clusters[1:]
+
+    if len(clusters) > 1 and top["ratio"] >= 0.82:
+        return clusters[1:]
+
+    return clusters
+
+
+def _noise_profile(noise: float) -> tuple[int, int, float, int]:
     n = _normalize_noise(noise) / 100.0
 
-    # n bajo: más color global. n alto: más muestras distintas.
-    max_colors = int(round(1 + (n * 15)))  # 1..16
-    similar_distance = int(round(34 - (n * 28)))  # 34..6
-    min_cluster_ratio = 0.18 - (n * 0.165)  # 0.18..0.015
+    # n bajo: mas global; n alto: mas detalle
+    max_colors = int(round(1 + (n * 23)))  # 1..24
+    similar_distance = int(round(40 - (n * 38)))  # 40..2
+    min_cluster_ratio = 0.22 - (n * 0.215)  # 0.22..0.005
+    quant_shift = int(round(4 - (n * 4)))  # 4..0
 
     distance2 = similar_distance * similar_distance * 3
-    return max_colors, distance2, max(0.005, float(min_cluster_ratio))
+    return max_colors, distance2, max(0.003, float(min_cluster_ratio)), max(0, quant_shift)
+
+
+def _to_preview_data_url(image: Image.Image, size: int = 84) -> str:
+    thumb = image.copy()
+    thumb.thumbnail((size, size), Image.Resampling.BILINEAR)
+    buffer = BytesIO()
+    thumb.save(buffer, format="PNG")
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def _normalize_noise(noise: float) -> float:
@@ -279,4 +319,3 @@ def _rgb_distance2(left: tuple[int, int, int], right: tuple[int, int, int]) -> i
         + (left[1] - right[1]) * (left[1] - right[1])
         + (left[2] - right[2]) * (left[2] - right[2])
     )
-

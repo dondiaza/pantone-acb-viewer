@@ -287,6 +287,16 @@ body {
   background: #fff;
 }
 
+.layer-preview {
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+  margin-bottom: 8px;
+}
+
 .psd-swatches {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));

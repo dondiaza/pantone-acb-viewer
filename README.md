@@ -13,8 +13,10 @@ Visor de bibliotecas Pantone (`.acb`, `.ase`) con analisis de archivos `.psd`, `
   - alto = mas muestras distintas
 - Checkbox para incluir capas no visibles.
 - Checkbox para incluir superposicion/efectos de color.
+- Checkbox para ignorar color de fondo (capas solidas completas).
 - Resultado agrupado por archivo -> por capa -> por color.
 - Resumen global por Pantones sugeridos (no por HEX detectado).
+- Preview en miniatura por capa.
 - Carga por chunks para evitar errores de payload en produccion.
 
 ## Requisitos
@@ -50,9 +52,9 @@ Web: `http://127.0.0.1:5000`
 - `POST /api/import/init`
 - `POST /api/import/<upload_id>/chunk`
 - `POST /api/import/<upload_id>/finish`
-  - campos: `filename`, `book_id`, `noise`, `include_hidden`, `include_overlay`
+  - campos: `filename`, `book_id`, `noise`, `include_hidden`, `include_overlay`, `ignore_background`
 - `POST /api/import/url`
-  - JSON: `url`, `book_id`, `noise`, `include_hidden`, `include_overlay`
+  - JSON: `url`, `book_id`, `noise`, `include_hidden`, `include_overlay`, `ignore_background`
 - `POST /api/psd/suggest` (compatibilidad subida directa)
 
 ## Tests
@@ -60,4 +62,3 @@ Web: `http://127.0.0.1:5000`
 ```powershell
 python -m pytest
 ```
-

@@ -151,6 +151,7 @@ function setupPsdImport() {
     const paletteSelect = document.getElementById("psdBookSelect");
     const includeHidden = document.getElementById("includeHiddenChk").checked;
     const includeOverlay = document.getElementById("includeOverlayChk").checked;
+    const ignoreBackground = document.getElementById("ignoreBackgroundChk").checked;
     const urlInput = document.getElementById("urlInput");
     const sourceUrl = urlInput.value.trim();
     const noise = Number(noiseRange.value);
@@ -165,6 +166,7 @@ function setupPsdImport() {
       noise,
       includeHidden,
       includeOverlay,
+      ignoreBackground,
     };
 
     const results = [];
@@ -260,6 +262,7 @@ async function uploadAndAnalyzeFileOnce(file, options) {
   finishBody.append("noise", String(options.noise));
   finishBody.append("include_hidden", options.includeHidden ? "1" : "0");
   finishBody.append("include_overlay", options.includeOverlay ? "1" : "0");
+  finishBody.append("ignore_background", options.ignoreBackground ? "1" : "0");
 
   const finishResponse = await fetch(`/api/import/${encodeURIComponent(uploadId)}/finish`, {
     method: "POST",
@@ -282,6 +285,7 @@ async function analyzeFromUrl(sourceUrl, options) {
       noise: options.noise,
       include_hidden: options.includeHidden,
       include_overlay: options.includeOverlay,
+      ignore_background: options.ignoreBackground,
     }),
   });
   const payload = await parseApiResponse(response);
@@ -579,7 +583,7 @@ function createFileBlock(item, index) {
   info.className = "hint";
   const payload = item.payload;
   const opt = payload.options || {};
-  info.textContent = `Paleta: ${payload.palette_title} | Capas analizadas: ${payload.layer_count} | Ruido: ${opt.noise ?? "-"} | Capas no visibles: ${opt.include_hidden ? "si" : "no"}`;
+  info.textContent = `Paleta: ${payload.palette_title} | Capas analizadas: ${payload.layer_count} | Ruido: ${opt.noise ?? "-"} | Capas no visibles: ${opt.include_hidden ? "si" : "no"} | Ignorar fondo: ${opt.ignore_background ? "si" : "no"}`;
   block.appendChild(info);
 
   const summaryHeading = document.createElement("h4");
@@ -642,6 +646,14 @@ function createLayerColorCard(layer) {
   title.className = "name";
   title.textContent = `${layer.layer_name}${layer.visible ? "" : " (oculta)"}`;
   card.appendChild(title);
+
+  if (layer.preview_data_url) {
+    const preview = document.createElement("img");
+    preview.className = "layer-preview";
+    preview.src = layer.preview_data_url;
+    preview.alt = `Preview ${layer.layer_name}`;
+    card.appendChild(preview);
+  }
 
   const grid = document.createElement("div");
   grid.className = "psd-swatches";
@@ -745,4 +757,3 @@ function clearMessages() {
   const root = document.getElementById("messages");
   root.innerHTML = "";
 }
-

@@ -94,3 +94,57 @@ def test_summary_groups_by_pantone_not_detected_hex() -> None:
 
     names = {item["pantone"]["name"] for item in payload["summary_colors"]}
     assert names == {"PANTONE RED", "PANTONE GREEN"}
+
+
+def test_noise_100_can_keep_two_close_variants() -> None:
+    image = Image.new("RGBA", (8, 1))
+    image.putdata(
+        [
+            (210, 30, 30, 255),
+            (212, 32, 32, 255),
+            (208, 28, 30, 255),
+            (240, 40, 40, 255),
+            (242, 42, 41, 255),
+            (238, 39, 39, 255),
+            (0, 0, 0, 0),
+            (0, 0, 0, 0),
+        ]
+    )
+    from io import BytesIO
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    payload = suggest_from_file_bytes(
+        file_bytes=buffer.getvalue(),
+        filename="sample.png",
+        repository=_FakeRepository(),
+        palette_id="demo",
+        noise=100.0,
+    )
+    assert len(payload["layers"]) == 1
+    assert len(payload["layers"][0]["colors"]) >= 2
+
+
+def test_ignore_background_removes_full_layer_color() -> None:
+    image = Image.new("RGBA", (10, 10), (255, 255, 255, 255))
+    for x in range(3):
+        for y in range(3):
+            image.putpixel((x, y), (220, 30, 30, 255))
+
+    from io import BytesIO
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    payload = suggest_from_file_bytes(
+        file_bytes=buffer.getvalue(),
+        filename="sample.png",
+        repository=_FakeRepository(),
+        palette_id="demo",
+        ignore_background=True,
+        noise=10.0,
+    )
+
+    assert len(payload["layers"]) == 1
+    first_layer = payload["layers"][0]
+    assert first_layer["colors"]
+    assert all(color["detected_hex"] != "#FFFFFF" for color in first_layer["colors"])

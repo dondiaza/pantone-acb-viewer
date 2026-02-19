@@ -109,6 +109,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
         noise = _parse_noise(request.form.get("noise"))
         include_hidden = _parse_bool(request.form.get("include_hidden"))
         include_overlay = _parse_bool(request.form.get("include_overlay"), default=True)
+        ignore_background = _parse_bool(request.form.get("ignore_background"))
 
         try:
             session, file_bytes = upload_store.finalize(upload_id)
@@ -128,6 +129,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
                 noise=noise,
                 include_hidden=include_hidden,
                 include_overlay=include_overlay,
+                ignore_background=ignore_background,
             )
             payload["palette_id"] = palette_id
             payload["palette_title"] = repository.get_palette_title(palette_id)
@@ -157,6 +159,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
         noise = _parse_noise(request.form.get("noise"))
         include_hidden = _parse_bool(request.form.get("include_hidden"))
         include_overlay = _parse_bool(request.form.get("include_overlay"), default=True)
+        ignore_background = _parse_bool(request.form.get("ignore_background"))
 
         try:
             payload = suggest_from_file_bytes(
@@ -167,6 +170,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
                 noise=noise,
                 include_hidden=include_hidden,
                 include_overlay=include_overlay,
+                ignore_background=ignore_background,
             )
             payload["palette_id"] = palette_id
             payload["palette_title"] = repository.get_palette_title(palette_id)
@@ -196,6 +200,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
         noise = _parse_noise(raw.get("noise"))
         include_hidden = _parse_bool(raw.get("include_hidden"))
         include_overlay = _parse_bool(raw.get("include_overlay"), default=True)
+        ignore_background = _parse_bool(raw.get("ignore_background"))
 
         try:
             request_obj = urllib.request.Request(
@@ -222,6 +227,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
                 noise=noise,
                 include_hidden=include_hidden,
                 include_overlay=include_overlay,
+                ignore_background=ignore_background,
             )
             payload["palette_id"] = palette_id
             payload["palette_title"] = repository.get_palette_title(palette_id)
