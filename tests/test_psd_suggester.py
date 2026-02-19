@@ -1,6 +1,10 @@
 from PIL import Image
 
-from pantone_viewer.psd_suggester import _extract_dominant_rgbs, suggest_from_file_bytes
+from pantone_viewer.psd_suggester import (
+    _extract_dominant_rgbs,
+    _noise_profile,
+    suggest_from_file_bytes,
+)
 
 
 def test_extract_dominant_rgbs_returns_multiple_colors() -> None:
@@ -178,3 +182,47 @@ def test_ignore_background_does_not_remove_when_border_not_uniform() -> None:
     assert len(payload["layers"]) == 1
     first_layer = payload["layers"][0]
     assert any(color["detected_hex"] == "#FFFFFF" for color in first_layer["colors"])
+
+
+def test_max_colors_caps_detected_suggestions() -> None:
+    image = Image.new("RGBA", (6, 2))
+    image.putdata(
+        [
+            (230, 20, 20, 255),
+            (230, 20, 20, 255),
+            (20, 230, 20, 255),
+            (20, 230, 20, 255),
+            (20, 20, 230, 255),
+            (20, 20, 230, 255),
+            (230, 20, 20, 255),
+            (230, 20, 20, 255),
+            (20, 230, 20, 255),
+            (20, 230, 20, 255),
+            (20, 20, 230, 255),
+            (20, 20, 230, 255),
+        ]
+    )
+    from io import BytesIO
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    payload = suggest_from_file_bytes(
+        file_bytes=buffer.getvalue(),
+        filename="sample.png",
+        repository=_FakeRepository(),
+        palette_id="demo",
+        noise=100.0,
+        max_colors=1,
+    )
+
+    assert len(payload["layers"]) == 1
+    assert len(payload["layers"][0]["colors"]) == 1
+    assert payload["options"]["max_colors"] == 1
+    assert len(payload["summary_colors"]) == 1
+
+
+def test_noise_profile_high_end_is_smoother() -> None:
+    _, distance2_97, ratio_97, _ = _noise_profile(97.0)
+    _, distance2_100, ratio_100, _ = _noise_profile(100.0)
+    assert abs(distance2_97 - distance2_100) < 25.0
+    assert abs(ratio_97 - ratio_100) < 0.02

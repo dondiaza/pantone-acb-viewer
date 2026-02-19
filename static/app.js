@@ -79,12 +79,21 @@ function setupPsdImport() {
   const dropZone = document.getElementById("psdDropZone");
   const noiseRange = document.getElementById("noiseRange");
   const noiseLabel = document.getElementById("noiseLabel");
+  const maxColorsRange = document.getElementById("maxColorsRange");
+  const maxColorsLabel = document.getElementById("maxColorsLabel");
 
   const updateNoiseLabel = () => {
     noiseLabel.textContent = String(noiseRange.value);
   };
   noiseRange.addEventListener("input", updateNoiseLabel);
   updateNoiseLabel();
+
+  const updateMaxColorsLabel = () => {
+    const value = Number(maxColorsRange.value);
+    maxColorsLabel.textContent = value === 0 ? "Auto" : String(value);
+  };
+  maxColorsRange.addEventListener("input", updateMaxColorsLabel);
+  updateMaxColorsLabel();
 
   const setFiles = (files) => {
     const accepted = [];
@@ -155,6 +164,7 @@ function setupPsdImport() {
     const urlInput = document.getElementById("urlInput");
     const sourceUrl = urlInput.value.trim();
     const noise = Number(noiseRange.value);
+    const maxColors = Number(maxColorsRange.value);
 
     if (state.psdFiles.length === 0 && !sourceUrl) {
       showMessage("Selecciona o arrastra archivos, o indica una URL.", true);
@@ -164,6 +174,7 @@ function setupPsdImport() {
     const options = {
       bookId: paletteSelect.value || "",
       noise,
+      maxColors,
       includeHidden,
       includeOverlay,
       ignoreBackground,
@@ -260,6 +271,7 @@ async function uploadAndAnalyzeFileOnce(file, options) {
     finishBody.append("book_id", options.bookId);
   }
   finishBody.append("noise", String(options.noise));
+  finishBody.append("max_colors", String(options.maxColors));
   finishBody.append("include_hidden", options.includeHidden ? "1" : "0");
   finishBody.append("include_overlay", options.includeOverlay ? "1" : "0");
   finishBody.append("ignore_background", options.ignoreBackground ? "1" : "0");
@@ -283,6 +295,7 @@ async function analyzeFromUrl(sourceUrl, options) {
       url: sourceUrl,
       book_id: options.bookId || "",
       noise: options.noise,
+      max_colors: options.maxColors,
       include_hidden: options.includeHidden,
       include_overlay: options.includeOverlay,
       ignore_background: options.ignoreBackground,
@@ -583,7 +596,8 @@ function createFileBlock(item, index) {
   info.className = "hint";
   const payload = item.payload;
   const opt = payload.options || {};
-  info.textContent = `Paleta: ${payload.palette_title} | Capas analizadas: ${payload.layer_count} | Ruido: ${opt.noise ?? "-"} | Capas no visibles: ${opt.include_hidden ? "si" : "no"} | Ignorar fondo: ${opt.ignore_background ? "si" : "no"}`;
+  const maxColorsLabel = Number(opt.max_colors || 0) === 0 ? "Auto" : String(opt.max_colors);
+  info.textContent = `Paleta: ${payload.palette_title} | Capas analizadas: ${payload.layer_count} | Ruido: ${opt.noise ?? "-"} | Max. colores: ${maxColorsLabel} | Capas no visibles: ${opt.include_hidden ? "si" : "no"} | Ignorar fondo: ${opt.ignore_background ? "si" : "no"}`;
   block.appendChild(info);
 
   const summaryHeading = document.createElement("h4");
@@ -602,7 +616,7 @@ function createFileBlock(item, index) {
   } else {
     summaryColors.forEach((summaryItem) => {
       const card = createColorCard({
-        name: `${summaryItem.pantone.name} · ${summaryItem.occurrences} apariciones`,
+        name: `${summaryItem.pantone.name} - ${summaryItem.occurrences} apariciones`,
         code: summaryItem.pantone.code,
         hex: summaryItem.pantone.hex,
       });

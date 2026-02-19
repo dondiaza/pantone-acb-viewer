@@ -10,6 +10,10 @@ from .acb_parser import Book, parse_acb
 from .ase_parser import parse_ase
 
 DEFAULT_PALETTE_FILENAME = "pantone solid coated-v4.acb"
+FIXED_ACHROMATIC_BY_HEX = {
+    "#FFFFFF": "BLANCO",
+    "#000000": "NEGRO",
+}
 
 
 @dataclass(slots=True)
@@ -112,6 +116,28 @@ class ACBRepository:
             target_rgb = _hex_to_rgb(normalized_hex)
 
             scoped_books = self._resolve_book_scope(book_id)
+            scope_label = (
+                scoped_books[0][1].stem
+                if len(scoped_books) == 1
+                else f"Todas las paletas ({len(scoped_books)})"
+            )
+            scope_book_id = scoped_books[0][0] if len(scoped_books) == 1 else None
+            forced_match = _forced_achromatic_item_from_hex(
+                normalized_hex=normalized_hex,
+                scope_book_id=scope_book_id,
+                scope_book_title=scoped_books[0][1].stem if len(scoped_books) == 1 else "Coincidencia fija",
+                scope_filename=scoped_books[0][1].name if len(scoped_books) == 1 else "",
+            )
+            if forced_match is not None:
+                return {
+                    "query": normalized_hex,
+                    "scope": scope_label,
+                    "scope_book_id": scope_book_id,
+                    "exact_count": 1,
+                    "exact_matches": [forced_match],
+                    "nearest": [forced_match | {"distance": 0}],
+                }
+
             exact_matches: list[dict[str, Any]] = []
             nearest: list[tuple[int, dict[str, Any]]] = []
 
@@ -139,15 +165,10 @@ class ACBRepository:
             nearest.sort(key=lambda row: row[0])
             nearest_items = [item | {"distance": distance} for distance, item in nearest[:limit]]
 
-            scope_label = (
-                scoped_books[0][1].stem
-                if len(scoped_books) == 1
-                else f"Todas las paletas ({len(scoped_books)})"
-            )
             return {
                 "query": normalized_hex,
                 "scope": scope_label,
-                "scope_book_id": scoped_books[0][0] if len(scoped_books) == 1 else None,
+                "scope_book_id": scope_book_id,
                 "exact_count": len(exact_matches),
                 "exact_matches": exact_matches[:limit],
                 "nearest": nearest_items,
@@ -156,6 +177,14 @@ class ACBRepository:
     def nearest_in_book(self, target_rgb: tuple[int, int, int], book_id: str) -> dict[str, Any]:
         with self._lock:
             path, book = self._require_book(book_id)
+            forced_match = _forced_achromatic_item_from_rgb(
+                target_rgb=target_rgb,
+                scope_book_id=book_id,
+                scope_book_title=path.stem,
+                scope_filename=path.name,
+            )
+            if forced_match is not None:
+                return forced_match | {"distance": 0}
 
             nearest: tuple[int, Any] | None = None
             for color in book.colors:
@@ -303,4 +332,45 @@ def _rgb_distance(left: tuple[int, int, int], right: tuple[int, int, int]) -> in
         (left[0] - right[0]) * (left[0] - right[0])
         + (left[1] - right[1]) * (left[1] - right[1])
         + (left[2] - right[2]) * (left[2] - right[2])
+    )
+
+
+def _forced_achromatic_item_from_hex(
+    normalized_hex: str,
+    scope_book_id: str | None,
+    scope_book_title: str,
+    scope_filename: str,
+) -> dict[str, Any] | None:
+    name = FIXED_ACHROMATIC_BY_HEX.get(normalized_hex.upper())
+    if name is None:
+        return None
+
+    return {
+        "book_id": scope_book_id,
+        "book_title": scope_book_title,
+        "filename": scope_filename,
+        "name": name,
+        "code": None,
+        "hex": normalized_hex.upper(),
+    }
+
+
+def _forced_achromatic_item_from_rgb(
+    target_rgb: tuple[int, int, int],
+    scope_book_id: str | None,
+    scope_book_title: str,
+    scope_filename: str,
+) -> dict[str, Any] | None:
+    if target_rgb == (255, 255, 255):
+        fixed_hex = "#FFFFFF"
+    elif target_rgb == (0, 0, 0):
+        fixed_hex = "#000000"
+    else:
+        return None
+
+    return _forced_achromatic_item_from_hex(
+        normalized_hex=fixed_hex,
+        scope_book_id=scope_book_id,
+        scope_book_title=scope_book_title,
+        scope_filename=scope_filename,
     )

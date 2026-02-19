@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -60,6 +60,10 @@
           <input id="noiseRange" type="range" min="0" max="100" step="1" value="35" />
           <span id="noiseLabel" class="hint">35</span>
 
+          <label for="maxColorsRange">Maximo de colores Pantone sugeridos</label>
+          <input id="maxColorsRange" type="range" min="0" max="15" step="1" value="0" />
+          <span id="maxColorsLabel" class="hint">Auto</span>
+
           <label class="check-line">
             <input id="includeHiddenChk" type="checkbox" />
             Incluir capas no visibles
@@ -77,7 +81,10 @@
 
           <button type="submit">Analizar seleccion</button>
         </form>
-        <p class="hint">A menor ruido, color mas global por capa. A mayor ruido, mas muestras distintas.</p>
+        <p class="hint">
+          A menor ruido, color mas global por capa. A mayor ruido, mas muestras distintas. Maximo de colores:
+          0 = automatico.
+        </p>
       </section>
 
       <section id="psdResults" class="psd-results" hidden>

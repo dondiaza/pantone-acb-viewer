@@ -93,7 +93,8 @@ body {
   min-width: 180px;
 }
 
-#noiseRange {
+#noiseRange,
+#maxColorsRange {
   width: 100%;
 }
 

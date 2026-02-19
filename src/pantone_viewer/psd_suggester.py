@@ -19,6 +19,7 @@ def suggest_from_file_bytes(
     repository: ACBRepository,
     palette_id: str,
     noise: float = 35.0,
+    max_colors: int = 0,
     include_hidden: bool = False,
     include_overlay: bool = True,
     ignore_background: bool = False,
@@ -44,6 +45,7 @@ def suggest_from_file_bytes(
             image=layer["image"],
             noise=noise,
             ignore_background=ignore_background,
+            max_colors=max_colors,
         )
         if not color_clusters:
             continue
@@ -91,12 +93,17 @@ def suggest_from_file_bytes(
         summary_by_pantone.values(),
         key=lambda item: (-int(item["occurrences"]), str(item["pantone"]["name"])),
     )
+    normalized_max_colors = _normalize_max_colors(max_colors)
+    if normalized_max_colors > 0:
+        summary_colors = summary_colors[:normalized_max_colors]
+
     return {
         "layer_count": len(layer_payload),
         "layers": layer_payload,
         "summary_colors": summary_colors,
         "options": {
             "noise": _normalize_noise(noise),
+            "max_colors": normalized_max_colors,
             "include_hidden": include_hidden,
             "include_overlay": include_overlay,
             "ignore_background": ignore_background,
@@ -180,9 +187,11 @@ def _extract_layers_from_raster(image_bytes: bytes, filename: str) -> list[dict[
 
 
 def _extract_dominant_clusters(
-    image: Image.Image, noise: float, ignore_background: bool
+    image: Image.Image, noise: float, ignore_background: bool, max_colors: int = 0
 ) -> list[dict[str, Any]]:
-    max_colors, similar_rgb_distance2, min_cluster_ratio, quant_shift = _noise_profile(noise)
+    auto_max_colors, similar_rgb_distance2, min_cluster_ratio, quant_shift = _noise_profile(noise)
+    max_colors_value = _normalize_max_colors(max_colors)
+    effective_max_colors = max_colors_value if max_colors_value > 0 else auto_max_colors
 
     rgba = image.convert("RGBA")
     width, height = rgba.size
@@ -288,7 +297,7 @@ def _extract_dominant_clusters(
 
     return [
         {"weight": item["weight"], "rgb": item["rgb"]}
-        for item in filtered[:max_colors]
+        for item in filtered[:effective_max_colors]
     ]
 
 
@@ -297,6 +306,7 @@ def _extract_dominant_rgbs(image: Image.Image, max_colors: int = 8) -> list[tupl
         image=image,
         noise=35.0,
         ignore_background=False,
+        max_colors=max_colors,
     )
     return [item["rgb"] for item in clusters[:max_colors]]
 
@@ -305,7 +315,7 @@ def _remove_background_cluster(
     clusters: list[dict[str, Any]],
     border_rgb: tuple[int, int, int] | None,
     border_ratio: float,
-    similar_rgb_distance2: int,
+    similar_rgb_distance2: float,
 ) -> list[dict[str, Any]]:
     if not clusters:
         return clusters
@@ -319,7 +329,7 @@ def _remove_background_cluster(
     if border_ratio < 0.80:
         return clusters
 
-    tolerance = max(120, int(similar_rgb_distance2 * 2.0))
+    tolerance = max(120.0, float(similar_rgb_distance2) * 2.0)
     if _rgb_distance2(top["rgb"], border_rgb) > tolerance:
         return clusters
 
@@ -330,16 +340,17 @@ def _remove_background_cluster(
     return []
 
 
-def _noise_profile(noise: float) -> tuple[int, int, float, int]:
+def _noise_profile(noise: float) -> tuple[int, float, float, int]:
     n = _normalize_noise(noise) / 100.0
+    detail = n**1.15
 
-    # n bajo: mas global; n alto: mas detalle
-    max_colors = int(round(1 + (n * 31)))  # 1..32
-    similar_distance = int(round(44 - (n * 43)))  # 44..1
-    min_cluster_ratio = 0.25 - (n * 0.249)  # 0.25..0.001
-    quant_shift = int(round(5 - (n * 5)))  # 5..0
+    # n bajo: mas global; n alto: mas detalle, con transicion suave en tramo alto.
+    max_colors = int(round(2 + (detail * 22)))  # 2..24
+    similar_distance = 22.0 - (detail * 18.0)  # 22..4
+    min_cluster_ratio = 0.24 - (detail * 0.232)  # 0.24..0.008
+    quant_shift = int(round((1.0 - detail) * 3.0))  # 3..0
 
-    distance2 = similar_distance * similar_distance * 3
+    distance2 = (similar_distance * similar_distance) * 3.0
     return max_colors, distance2, max(0.003, float(min_cluster_ratio)), max(0, quant_shift)
 
 
@@ -485,6 +496,14 @@ def _normalize_noise(noise: float) -> float:
     except Exception:
         value = 35.0
     return max(0.0, min(100.0, value))
+
+
+def _normalize_max_colors(max_colors: int | float | None) -> int:
+    try:
+        value = int(float(max_colors))
+    except Exception:
+        value = 0
+    return max(0, min(15, value))
 
 
 def _pantone_key(pantone: dict[str, Any]) -> str:

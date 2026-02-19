@@ -107,6 +107,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
             return jsonify({"error": "No hay paletas disponibles"}), 400
 
         noise = _parse_noise(request.form.get("noise"))
+        max_colors = _parse_max_colors(request.form.get("max_colors"))
         include_hidden = _parse_bool(request.form.get("include_hidden"))
         include_overlay = _parse_bool(request.form.get("include_overlay"), default=True)
         ignore_background = _parse_bool(request.form.get("ignore_background"))
@@ -127,6 +128,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
                 repository=repository,
                 palette_id=palette_id,
                 noise=noise,
+                max_colors=max_colors,
                 include_hidden=include_hidden,
                 include_overlay=include_overlay,
                 ignore_background=ignore_background,
@@ -157,6 +159,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
             return jsonify({"error": "No hay paletas disponibles"}), 400
 
         noise = _parse_noise(request.form.get("noise"))
+        max_colors = _parse_max_colors(request.form.get("max_colors"))
         include_hidden = _parse_bool(request.form.get("include_hidden"))
         include_overlay = _parse_bool(request.form.get("include_overlay"), default=True)
         ignore_background = _parse_bool(request.form.get("ignore_background"))
@@ -168,6 +171,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
                 repository=repository,
                 palette_id=palette_id,
                 noise=noise,
+                max_colors=max_colors,
                 include_hidden=include_hidden,
                 include_overlay=include_overlay,
                 ignore_background=ignore_background,
@@ -198,6 +202,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
             return jsonify({"error": "No hay paletas disponibles"}), 400
 
         noise = _parse_noise(raw.get("noise"))
+        max_colors = _parse_max_colors(raw.get("max_colors"))
         include_hidden = _parse_bool(raw.get("include_hidden"))
         include_overlay = _parse_bool(raw.get("include_overlay"), default=True)
         ignore_background = _parse_bool(raw.get("ignore_background"))
@@ -225,6 +230,7 @@ def create_app(acb_dir: str | Path | None = None) -> Flask:
                 repository=repository,
                 palette_id=palette_id,
                 noise=noise,
+                max_colors=max_colors,
                 include_hidden=include_hidden,
                 include_overlay=include_overlay,
                 ignore_background=ignore_background,
@@ -266,6 +272,13 @@ def _parse_noise(value) -> float:
         return max(0.0, min(100.0, float(value)))
     except Exception:
         return 35.0
+
+
+def _parse_max_colors(value) -> int:
+    try:
+        return max(0, min(15, int(float(value))))
+    except Exception:
+        return 0
 
 
 def _is_url_allowed(value: str) -> bool:

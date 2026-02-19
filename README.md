@@ -11,6 +11,9 @@ Visor de bibliotecas Pantone (`.acb`, `.ase`) con analisis de archivos `.psd`, `
 - Slider de ruido:
   - bajo = color mas global
   - alto = mas muestras distintas
+- Slider de maximo de colores Pantone sugeridos (0-15):
+  - 0 = automatico segun ruido
+  - 1..15 = limite maximo aplicado al analisis
 - Checkbox para incluir capas no visibles.
 - Checkbox para incluir superposicion/efectos de color.
 - Checkbox para ignorar color de fondo (capas solidas completas).
@@ -18,6 +21,9 @@ Visor de bibliotecas Pantone (`.acb`, `.ase`) con analisis de archivos `.psd`, `
 - Resumen global por Pantones sugeridos (no por HEX detectado).
 - Preview en miniatura por capa.
 - Carga por chunks para evitar errores de payload en produccion.
+- Regla fija de blanco/negro:
+  - `#FFFFFF` devuelve siempre `BLANCO`
+  - `#000000` devuelve siempre `NEGRO`
 
 ## Requisitos
 
@@ -52,9 +58,9 @@ Web: `http://127.0.0.1:5000`
 - `POST /api/import/init`
 - `POST /api/import/<upload_id>/chunk`
 - `POST /api/import/<upload_id>/finish`
-  - campos: `filename`, `book_id`, `noise`, `include_hidden`, `include_overlay`, `ignore_background`
+  - campos: `filename`, `book_id`, `noise`, `max_colors`, `include_hidden`, `include_overlay`, `ignore_background`
 - `POST /api/import/url`
-  - JSON: `url`, `book_id`, `noise`, `include_hidden`, `include_overlay`, `ignore_background`
+  - JSON: `url`, `book_id`, `noise`, `max_colors`, `include_hidden`, `include_overlay`, `ignore_background`
 - `POST /api/psd/suggest` (compatibilidad subida directa)
 
 ## Tests
