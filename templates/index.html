@@ -14,6 +14,15 @@
       </header>
 
       <section class="toolbar">
+        <label class="zoom-control" for="modeSelect">
+          Modo
+          <select id="modeSelect">
+            <option value="normal" selected>Normal</option>
+            <option value="expert">Experto</option>
+          </select>
+          <span id="modeHint" class="zoom-label">Normal: interfaz simple</span>
+        </label>
+
         <label class="zoom-control" for="zoomRange">
           Zoom de rejilla
           <input id="zoomRange" type="range" min="120" max="280" step="10" value="210" />
@@ -21,12 +30,28 @@
         </label>
 
         <button id="collapseAllBtn" class="secondary-button" type="button">Colapsar todo</button>
+        <button id="collapseExceptBtn" class="secondary-button" type="button" hidden>
+          Colapsar excepto abierto
+        </button>
 
         <form id="hexSearchForm" class="search-form">
           <label for="hexInput">Buscar HEX</label>
-          <input id="hexInput" name="hex" type="text" placeholder="#E4002B" />
+          <input id="hexInput" name="hex" type="text" placeholder="#E4002B / rgb(...) / hsl(...) / cmyk(...)" />
           <label for="searchBookSelect">Paleta</label>
           <select id="searchBookSelect" name="book_id"></select>
+          <button id="pasteColorBtn" class="expert-only" hidden type="button">Pegar color</button>
+          <label class="check-line expert-only" hidden>
+            <input id="achromaticEnabledChk" type="checkbox" checked />
+            Blanco/Negro probable
+          </label>
+          <label class="expert-only" hidden for="achromaticWhite">
+            Umbral blanco
+            <input id="achromaticWhite" type="number" min="0" max="10" step="0.1" value="2.0" />
+          </label>
+          <label class="expert-only" hidden for="achromaticBlack">
+            Umbral negro
+            <input id="achromaticBlack" type="number" min="0" max="10" step="0.1" value="2.0" />
+          </label>
           <button type="submit">Buscar Pantone</button>
         </form>
       </section>

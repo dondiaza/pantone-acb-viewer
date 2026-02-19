@@ -7,7 +7,7 @@ from typing import Any
 
 from PIL import Image
 
-from .color_convert import rgb_to_hex
+from .color_convert import delta_e_ciede2000, reliability_label, rgb_to_hex, rgb_to_lab_d50
 from .repository import ACBRepository
 
 SUPPORTED_IMAGE_EXTENSIONS = {".psd", ".png", ".jpg", ".jpeg"}
@@ -18,6 +18,7 @@ def suggest_from_file_bytes(
     filename: str,
     repository: ACBRepository,
     palette_id: str,
+    mode: str = "normal",
     noise: float = 35.0,
     max_colors: int = 0,
     include_hidden: bool = False,
@@ -54,12 +55,31 @@ def suggest_from_file_bytes(
         for cluster in color_clusters:
             rgb = cluster["rgb"]
             detected_hex = rgb_to_hex(rgb)
-            nearest = repository.nearest_in_book(rgb, palette_id)
+            try:
+                nearest = repository.nearest_in_book(rgb, palette_id, mode=mode)
+            except TypeError:
+                nearest = repository.nearest_in_book(rgb, palette_id)
+            if mode == "expert":
+                detected_lab = rgb_to_lab_d50(rgb)
+                pantone_lab = rgb_to_lab_d50(
+                    (
+                        int(nearest["hex"][1:3], 16),
+                        int(nearest["hex"][3:5], 16),
+                        int(nearest["hex"][5:7], 16),
+                    )
+                )
+                delta_e = float(delta_e_ciede2000(detected_lab, pantone_lab))
+                reliability = reliability_label(delta_e)
+            else:
+                delta_e = None
+                reliability = None
             layer_colors.append(
                 {
                     "detected_hex": detected_hex,
                     "pantone": nearest,
                     "weight": cluster["weight"],
+                    "delta_e": round(delta_e, 3) if delta_e is not None else None,
+                    "reliability": reliability,
                 }
             )
 
@@ -86,6 +106,11 @@ def suggest_from_file_bytes(
                 "visible": bool(layer.get("visible", True)),
                 "preview_data_url": layer.get("preview_data_url"),
                 "colors": layer_colors,
+                "layer_state": {
+                    "visible": bool(layer.get("visible", True)),
+                    "opacity_zero": bool(layer.get("opacity_zero", False)),
+                    "clipped": bool(layer.get("clipped", False)),
+                },
             }
         )
 
@@ -97,11 +122,15 @@ def suggest_from_file_bytes(
     if normalized_max_colors > 0:
         summary_colors = summary_colors[:normalized_max_colors]
 
+    if mode == "expert":
+        _apply_weighted_summary(summary_colors, layer_payload)
+
     return {
         "layer_count": len(layer_payload),
         "layers": layer_payload,
         "summary_colors": summary_colors,
         "options": {
+            "mode": mode,
             "noise": _normalize_noise(noise),
             "max_colors": normalized_max_colors,
             "include_hidden": include_hidden,
@@ -163,10 +192,18 @@ def _extract_layers_from_psd(
             continue
 
         index += 1
+        opacity_zero = False
+        clipped = bool(getattr(layer, "clipping", False))
+        try:
+            opacity_zero = int(getattr(layer, "opacity", 255)) == 0
+        except Exception:
+            opacity_zero = False
         layers.append(
             {
                 "name": layer.name or f"Capa {index}",
                 "visible": is_visible,
+                "opacity_zero": opacity_zero,
+                "clipped": clipped,
                 "image": image,
                 "preview_data_url": _to_preview_data_url(image),
             }
@@ -515,4 +552,43 @@ def _rgb_distance2(left: tuple[int, int, int], right: tuple[int, int, int]) -> i
         (left[0] - right[0]) * (left[0] - right[0])
         + (left[1] - right[1]) * (left[1] - right[1])
         + (left[2] - right[2]) * (left[2] - right[2])
+    )
+
+
+def _apply_weighted_summary(
+    summary_colors: list[dict[str, Any]],
+    layers: list[dict[str, Any]],
+) -> None:
+    if not summary_colors:
+        return
+
+    layer_weight_map: dict[str, float] = {}
+    for layer in layers:
+        name = str(layer.get("layer_name", ""))
+        layer_state = layer.get("layer_state") or {}
+        weight = 1.0
+        if not bool(layer_state.get("visible", True)):
+            weight *= 0.4
+        if bool(layer_state.get("opacity_zero", False)):
+            weight *= 0.2
+        if bool(layer_state.get("clipped", False)):
+            weight *= 0.7
+        layer_weight_map[name] = weight
+
+    for item in summary_colors:
+        layers_list = item.get("layers", []) or []
+        base_occurrences = float(item.get("occurrences", 0))
+        weighted = 0.0
+        for layer_name in layers_list:
+            weighted += layer_weight_map.get(str(layer_name), 1.0)
+        if weighted <= 0.0:
+            weighted = base_occurrences
+        item["weighted_score"] = round(weighted, 3)
+
+    summary_colors.sort(
+        key=lambda item: (
+            -float(item.get("weighted_score", 0.0)),
+            -int(item.get("occurrences", 0)),
+            str(item.get("pantone", {}).get("name", "")),
+        )
     )

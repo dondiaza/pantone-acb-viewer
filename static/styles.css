@@ -93,6 +93,23 @@ body {
   min-width: 180px;
 }
 
+.expert-only {
+  transition: opacity 120ms ease;
+}
+
+body[data-mode="normal"] .expert-only {
+  display: none !important;
+}
+
+body[data-lod="high"] .card .name,
+body[data-lod="high"] .card .line {
+  display: none;
+}
+
+body[data-lod="medium"] .card .line {
+  display: none;
+}
+
 #noiseRange,
 #maxColorsRange {
   width: 100%;
@@ -184,6 +201,47 @@ body {
   font-weight: 500;
   color: var(--muted);
   font-size: 0.92rem;
+}
+
+.delta-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.delta-chip.excelente {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #047857;
+}
+
+.delta-chip.bueno {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.delta-chip.dudoso {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #c2410c;
+}
+
+.compare-row {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.compare-chip {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
 }
 
 .book-body {

@@ -7,9 +7,12 @@ const state = {
   books: [],
   defaultPaletteId: null,
   psdFiles: [],
+  mode: "normal",
+  openBookId: null,
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  setupMode();
   setupZoom();
   setupCollapseAll();
   setupHexSearch();
@@ -27,36 +30,94 @@ function setupZoom() {
     const value = Number(zoomRange.value);
     document.documentElement.style.setProperty("--card-min", `${value}px`);
     zoomLabel.textContent = `${value}px`;
+    if (value <= 150) {
+      document.body.dataset.lod = "high";
+    } else if (value <= 210) {
+      document.body.dataset.lod = "medium";
+    } else {
+      document.body.dataset.lod = "low";
+    }
   };
 
   zoomRange.addEventListener("input", applyZoom);
   applyZoom();
 }
 
+function setupMode() {
+  const select = document.getElementById("modeSelect");
+  const hint = document.getElementById("modeHint");
+  const collapseExcept = document.getElementById("collapseExceptBtn");
+
+  const applyMode = async () => {
+    state.mode = select.value === "expert" ? "expert" : "normal";
+    document.body.dataset.mode = state.mode;
+    hint.textContent =
+      state.mode === "expert"
+        ? "Experto: deltaE, ranking avanzado y metadatos extendidos"
+        : "Normal: interfaz simple";
+    collapseExcept.hidden = state.mode !== "expert";
+    document.querySelectorAll(".expert-only").forEach((item) => {
+      item.hidden = state.mode !== "expert";
+    });
+    await loadBooks();
+  };
+
+  select.addEventListener("change", () => {
+    applyMode().catch((error) => showMessage(`Error de modo: ${error.message}`, true));
+  });
+  document.body.dataset.mode = "normal";
+}
+
 function setupCollapseAll() {
   const button = document.getElementById("collapseAllBtn");
+  const collapseExcept = document.getElementById("collapseExceptBtn");
   button.addEventListener("click", () => {
     document.querySelectorAll("details.book").forEach((item) => {
       item.open = false;
+    });
+  });
+  collapseExcept.addEventListener("click", () => {
+    const selected = state.openBookId;
+    document.querySelectorAll("details.book").forEach((item) => {
+      item.open = item.dataset.bookId === selected;
     });
   });
 }
 
 function setupHexSearch() {
   const form = document.getElementById("hexSearchForm");
+  const pasteButton = document.getElementById("pasteColorBtn");
+  const input = document.getElementById("hexInput");
+  pasteButton.addEventListener("click", async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text && text.trim()) {
+        input.value = text.trim();
+      }
+    } catch (error) {
+      showMessage(`No se pudo leer portapapeles: ${error.message}`, true);
+    }
+  });
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const input = document.getElementById("hexInput");
     const select = document.getElementById("searchBookSelect");
+    const achromaticEnabled = document.getElementById("achromaticEnabledChk");
+    const achromaticWhite = document.getElementById("achromaticWhite");
+    const achromaticBlack = document.getElementById("achromaticBlack");
     const query = input.value.trim();
     if (!query) {
       return;
     }
 
-    const params = new URLSearchParams({ hex: query });
+    const params = new URLSearchParams({ hex: query, mode: state.mode });
     if (select.value) {
       params.set("book_id", select.value);
+    }
+    if (state.mode === "expert") {
+      params.set("achromatic_enabled", achromaticEnabled.checked ? "1" : "0");
+      params.set("achromatic_threshold_white", String(achromaticWhite.value || "2.0"));
+      params.set("achromatic_threshold_black", String(achromaticBlack.value || "2.0"));
     }
 
     try {
@@ -173,6 +234,7 @@ function setupPsdImport() {
 
     const options = {
       bookId: paletteSelect.value || "",
+      mode: state.mode,
       noise,
       maxColors,
       includeHidden,
@@ -270,6 +332,7 @@ async function uploadAndAnalyzeFileOnce(file, options) {
   if (options.bookId) {
     finishBody.append("book_id", options.bookId);
   }
+  finishBody.append("mode", options.mode || "normal");
   finishBody.append("noise", String(options.noise));
   finishBody.append("max_colors", String(options.maxColors));
   finishBody.append("include_hidden", options.includeHidden ? "1" : "0");
@@ -293,6 +356,7 @@ async function analyzeFromUrl(sourceUrl, options) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       url: sourceUrl,
+      mode: options.mode || "normal",
       book_id: options.bookId || "",
       noise: options.noise,
       max_colors: options.maxColors,
@@ -310,11 +374,12 @@ async function analyzeFromUrl(sourceUrl, options) {
 
 async function loadBooks() {
   showMessage("Cargando bibliotecas de muestras...");
-  const response = await fetch("/api/books");
+  const response = await fetch(`/api/books?mode=${encodeURIComponent(state.mode)}`);
   const payload = await parseApiResponse(response);
 
   const booksRoot = document.getElementById("books");
   booksRoot.innerHTML = "";
+  state.openBookId = null;
 
   if (payload.error) {
     showMessage(payload.error, true);
@@ -398,7 +463,12 @@ function createBookDetails(book) {
     const count = book.color_count ?? "?";
     const space = book.colorspace || "Desconocido";
     const format = book.format || "UNK";
-    meta.textContent = `${count} colores | ${space} | ${format}`;
+    let extra = "";
+    if (state.mode === "expert") {
+      const families = Number(book.duplicate_family_count || 0);
+      extra = ` | familias: ${families}`;
+    }
+    meta.textContent = `${count} colores | ${space} | ${format}${extra}`;
   }
   summary.appendChild(meta);
   details.appendChild(summary);
@@ -422,13 +492,18 @@ function createBookDetails(book) {
       if (!details.open || details.dataset.loaded === "true") {
         return;
       }
+      state.openBookId = book.id;
 
       body.hidden = false;
       body.textContent = "Cargando colores...";
       try {
         const loaded = await fetchBook(book.id);
         body.innerHTML = "";
-        body.appendChild(renderColorGrid(loaded.colors || []));
+        if (state.mode === "expert") {
+          body.appendChild(createExpertBookExplorer(book.id, loaded.colors || []));
+        } else {
+          body.appendChild(renderColorGrid(loaded.colors || []));
+        }
         details.dataset.loaded = "true";
       } catch (error) {
         body.innerHTML = "";
@@ -443,8 +518,95 @@ function createBookDetails(book) {
   return details;
 }
 
+function createExpertBookExplorer(bookId, initialColors) {
+  const root = document.createElement("div");
+  const controls = document.createElement("div");
+  controls.className = "search-form";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "Buscar por nombre/codigo/hex...";
+  const prev = document.createElement("button");
+  prev.type = "button";
+  prev.textContent = "<";
+  const next = document.createElement("button");
+  next.type = "button";
+  next.textContent = ">";
+  const pageInfo = document.createElement("span");
+  pageInfo.className = "hint";
+  controls.appendChild(input);
+  controls.appendChild(prev);
+  controls.appendChild(next);
+  controls.appendChild(pageInfo);
+  root.appendChild(controls);
+
+  const grid = document.createElement("div");
+  root.appendChild(grid);
+
+  let query = "";
+  let page = 0;
+  const pageSize = 120;
+  let source = initialColors;
+
+  const refresh = () => {
+    const filtered = source.filter((item) => {
+      if (!query) {
+        return true;
+      }
+      const q = query.toLowerCase();
+      return (
+        String(item.name || "").toLowerCase().includes(q) ||
+        String(item.code || "").toLowerCase().includes(q) ||
+        String(item.hex || "").toLowerCase().includes(q)
+      );
+    });
+    const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    page = Math.max(0, Math.min(page, totalPages - 1));
+    const pageItems = filtered.slice(page * pageSize, (page + 1) * pageSize);
+    pageInfo.textContent = `Pagina ${page + 1}/${totalPages} · ${filtered.length} resultados`;
+    grid.innerHTML = "";
+    grid.appendChild(renderColorGrid(pageItems));
+  };
+
+  input.addEventListener("input", async () => {
+    query = input.value.trim();
+    page = 0;
+    if (query.length >= 2) {
+      try {
+        const response = await fetch(
+          `/api/books/${encodeURIComponent(bookId)}/search?q=${encodeURIComponent(query)}&offset=0&limit=500&mode=expert`,
+        );
+        const payload = await parseApiResponse(response);
+        if (response.ok) {
+          source = payload.items || initialColors;
+        } else {
+          source = initialColors;
+        }
+      } catch {
+        source = initialColors;
+      }
+    } else {
+      source = initialColors;
+    }
+    refresh();
+  });
+
+  prev.addEventListener("click", () => {
+    page -= 1;
+    refresh();
+  });
+  next.addEventListener("click", () => {
+    page += 1;
+    refresh();
+  });
+
+  refresh();
+  return root;
+}
+
 async function fetchBook(bookId) {
-  const response = await fetch(`/api/books/${encodeURIComponent(bookId)}`);
+  const response = await fetch(
+    `/api/books/${encodeURIComponent(bookId)}?mode=${encodeURIComponent(state.mode)}`,
+  );
   const payload = await parseApiResponse(response);
   if (!response.ok) {
     throw new Error(payload.error || `HTTP ${response.status}`);
@@ -521,6 +683,7 @@ function renderSearchResults(payload) {
 
   const exact = payload.exact_matches || [];
   const nearest = payload.nearest || [];
+  const top5 = payload.top5 || [];
 
   summary.textContent = `${payload.query} | ambito: ${payload.scope} | coincidencias exactas: ${payload.exact_count}`;
 
@@ -531,6 +694,10 @@ function renderSearchResults(payload) {
     meta.className = "code";
     meta.textContent = item.book_title;
     card.querySelector(".card-body").appendChild(meta);
+    if (state.mode === "expert" && typeof item.delta_e === "number") {
+      const chip = createDeltaChip(item.delta_e, item.reliability || "");
+      card.querySelector(".card-body").appendChild(chip);
+    }
     cardsRoot.appendChild(card);
   }
 
@@ -552,8 +719,31 @@ function renderSearchResults(payload) {
     path.className = "path";
     path.textContent = `(${item.book_title})`;
     line.appendChild(path);
+    if (state.mode === "expert" && typeof item.delta_e === "number") {
+      const chip = createDeltaChip(item.delta_e, item.reliability || "");
+      line.appendChild(chip);
+    }
+    if (state.mode === "expert" && item.reason) {
+      const why = document.createElement("span");
+      why.className = "path";
+      why.textContent = ` · ${item.reason}`;
+      line.appendChild(why);
+    }
 
     textList.appendChild(line);
+  }
+
+  if (state.mode === "expert" && top5.length > 0) {
+    const title = document.createElement("div");
+    title.className = "hint";
+    title.textContent = "Top 5 y por qué:";
+    textList.appendChild(title);
+    top5.forEach((item, idx) => {
+      const line = document.createElement("div");
+      line.className = "search-line";
+      line.textContent = `${idx + 1}. ${item.name} (${item.hex}) - ${item.reason || ""}`;
+      textList.appendChild(line);
+    });
   }
 
   if (textSource.length === 0) {
@@ -562,6 +752,15 @@ function renderSearchResults(payload) {
     empty.textContent = "Sin coincidencias.";
     textList.appendChild(empty);
   }
+}
+
+function createDeltaChip(delta, reliability) {
+  const chip = document.createElement("span");
+  const rel = String(reliability || "Dudoso");
+  const normalized = rel.toLowerCase();
+  chip.className = `delta-chip ${normalized}`;
+  chip.textContent = `ΔE ${Number(delta).toFixed(2)} · ${rel}`;
+  return chip;
 }
 
 function renderMultiFileResults(items) {
@@ -578,9 +777,60 @@ function renderMultiFileResults(items) {
     return;
   }
 
+  if (state.mode === "expert") {
+    container.appendChild(createGlobalAggregate(items));
+  }
+
   items.forEach((item, index) => {
     container.appendChild(createFileBlock(item, index));
   });
+}
+
+function createGlobalAggregate(items) {
+  const block = document.createElement("section");
+  block.className = "file-block";
+  const title = document.createElement("h3");
+  title.className = "file-title";
+  title.textContent = "Resumen cruzado multiarchivo (experto)";
+  block.appendChild(title);
+
+  const counts = new Map();
+  const perFile = new Map();
+  items.forEach((fileItem) => {
+    const fileName = fileItem.filename;
+    const list = fileItem.payload?.summary_colors || [];
+    const fileSet = new Set();
+    list.forEach((entry) => {
+      const name = entry?.pantone?.name || "Sin nombre";
+      counts.set(name, (counts.get(name) || 0) + 1);
+      fileSet.add(name);
+    });
+    perFile.set(fileName, fileSet);
+  });
+
+  const repeated = [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20);
+  const repeatedLine = document.createElement("p");
+  repeatedLine.className = "hint";
+  repeatedLine.textContent =
+    repeated.length > 0
+      ? `Pantones mas repetidos: ${repeated.map(([name, n]) => `${name} (${n})`).join(" | ")}`
+      : "No hay pantones repetidos entre archivos.";
+  block.appendChild(repeatedLine);
+
+  const exclusiveLines = document.createElement("div");
+  exclusiveLines.className = "search-text-list";
+  perFile.forEach((set, fileName) => {
+    const exclusive = [...set].filter((name) => counts.get(name) === 1);
+    const line = document.createElement("div");
+    line.className = "search-line";
+    line.textContent = `${fileName}: ${exclusive.length > 0 ? exclusive.join(", ") : "Sin exclusivos"}`;
+    exclusiveLines.appendChild(line);
+  });
+  block.appendChild(exclusiveLines);
+  return block;
 }
 
 function createFileBlock(item, index) {
@@ -597,7 +847,7 @@ function createFileBlock(item, index) {
   const payload = item.payload;
   const opt = payload.options || {};
   const maxColorsLabel = Number(opt.max_colors || 0) === 0 ? "Auto" : String(opt.max_colors);
-  info.textContent = `Paleta: ${payload.palette_title} | Capas analizadas: ${payload.layer_count} | Ruido: ${opt.noise ?? "-"} | Max. colores: ${maxColorsLabel} | Capas no visibles: ${opt.include_hidden ? "si" : "no"} | Ignorar fondo: ${opt.ignore_background ? "si" : "no"}`;
+  info.textContent = `Modo: ${payload.mode || state.mode} | Paleta: ${payload.palette_title} | Capas analizadas: ${payload.layer_count} | Ruido: ${opt.noise ?? "-"} | Max. colores: ${maxColorsLabel} | Capas no visibles: ${opt.include_hidden ? "si" : "no"} | Ignorar fondo: ${opt.ignore_background ? "si" : "no"}`;
   block.appendChild(info);
 
   const summaryHeading = document.createElement("h4");
@@ -622,7 +872,8 @@ function createFileBlock(item, index) {
       });
       const extra = document.createElement("div");
       extra.className = "code";
-      extra.textContent = `Capas: ${summaryItem.layers.join(", ")}`;
+      const weighted = summaryItem.weighted_score ? ` | peso: ${summaryItem.weighted_score}` : "";
+      extra.textContent = `Capas: ${summaryItem.layers.join(", ")}${weighted}`;
       card.querySelector(".card-body").appendChild(extra);
       summaryGrid.appendChild(card);
     });
@@ -686,6 +937,18 @@ function createLayerColorCard(layer) {
     label.className = "psd-swatch-label";
     label.textContent = `Color ${index + 1}`;
 
+    if (state.mode === "expert") {
+      const compare = document.createElement("div");
+      compare.className = "compare-row";
+      const detected = document.createElement("span");
+      detected.className = "compare-chip";
+      detected.style.background = color.detected_hex;
+      detected.title = `Detectado ${color.detected_hex}`;
+      compare.appendChild(detected);
+      compare.appendChild(swatch.cloneNode());
+      item.appendChild(compare);
+    }
+
     item.appendChild(swatch);
     item.appendChild(label);
     grid.appendChild(item);
@@ -702,6 +965,9 @@ function createLayerColorCard(layer) {
       Detectado <span class="hex">${color.detected_hex}</span> ->
       ${escapeHtml(color.pantone.name)} <span class="hex">${color.pantone.hex}</span>
     `;
+    if (state.mode === "expert" && typeof color.delta_e === "number") {
+      line.appendChild(createDeltaChip(color.delta_e, color.reliability || ""));
+    }
     meta.appendChild(line);
   });
 
