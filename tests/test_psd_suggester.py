@@ -148,3 +148,33 @@ def test_ignore_background_removes_full_layer_color() -> None:
     first_layer = payload["layers"][0]
     assert first_layer["colors"]
     assert all(color["detected_hex"] != "#FFFFFF" for color in first_layer["colors"])
+
+
+def test_ignore_background_does_not_remove_when_border_not_uniform() -> None:
+    image = Image.new("RGBA", (10, 10), (255, 255, 255, 255))
+    for x in range(10):
+        image.putpixel((x, 0), (0, 255, 0, 255))
+        image.putpixel((x, 9), (0, 255, 0, 255))
+    for y in range(10):
+        image.putpixel((0, y), (0, 255, 0, 255))
+        image.putpixel((9, y), (0, 255, 0, 255))
+    for x in range(4, 7):
+        for y in range(4, 7):
+            image.putpixel((x, y), (220, 30, 30, 255))
+
+    from io import BytesIO
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    payload = suggest_from_file_bytes(
+        file_bytes=buffer.getvalue(),
+        filename="sample.png",
+        repository=_FakeRepository(),
+        palette_id="demo",
+        ignore_background=True,
+        noise=10.0,
+    )
+
+    assert len(payload["layers"]) == 1
+    first_layer = payload["layers"][0]
+    assert any(color["detected_hex"] == "#FFFFFF" for color in first_layer["colors"])

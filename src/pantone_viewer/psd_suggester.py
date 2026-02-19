@@ -122,21 +122,39 @@ def _extract_layers_from_psd(
         if not include_hidden and not is_visible:
             continue
 
-        rendered = None
-        try:
-            if include_overlay:
-                rendered = layer.composite(force=True)
-            else:
-                rendered = layer.topil()
-        except Exception:
+        rendered: Image.Image | None = None
+        if include_overlay:
             try:
                 rendered = layer.composite(force=True)
             except Exception:
                 rendered = None
-        if rendered is None:
+            if rendered is None:
+                try:
+                    rendered = layer.topil()
+                except Exception:
+                    rendered = None
+        else:
+            try:
+                rendered = layer.topil()
+            except Exception:
+                try:
+                    rendered = layer.composite(force=True)
+                except Exception:
+                    rendered = None
+
+        image = rendered.convert("RGBA") if rendered is not None else None
+
+        if include_overlay:
+            overlay = _extract_color_overlay_rgba(layer)
+            if overlay is not None:
+                if image is None:
+                    image = overlay
+                else:
+                    image = _apply_overlay_color(image, overlay)
+
+        if image is None:
             continue
 
-        image = rendered.convert("RGBA")
         index += 1
         layers.append(
             {
@@ -178,6 +196,7 @@ def _extract_dominant_clusters(
         rgba = rgba.resize((width, height), Image.Resampling.BILINEAR)
 
     bins: dict[tuple[int, int, int], list[float]] = {}
+    border_bins: dict[tuple[int, int, int], list[float]] = {}
     for y in range(height):
         for x in range(width):
             r, g, b, a = rgba.getpixel((x, y))
@@ -198,6 +217,16 @@ def _extract_dominant_clusters(
                 bucket[1] += r * weight
                 bucket[2] += g * weight
                 bucket[3] += b * weight
+
+            if x == 0 or y == 0 or x == (width - 1) or y == (height - 1):
+                border = border_bins.get(key)
+                if border is None:
+                    border_bins[key] = [weight, r * weight, g * weight, b * weight]
+                else:
+                    border[0] += weight
+                    border[1] += r * weight
+                    border[2] += g * weight
+                    border[3] += b * weight
 
     if not bins:
         return []
@@ -241,8 +270,15 @@ def _extract_dominant_clusters(
         ratio = float(item["weight"]) / total_weight
         with_ratio.append({"weight": item["weight"], "rgb": item["rgb"], "ratio": ratio})
 
+    border_rgb, border_ratio = _dominant_border_color(border_bins)
+
     if ignore_background:
-        with_ratio = _remove_background_cluster(with_ratio)
+        with_ratio = _remove_background_cluster(
+            with_ratio,
+            border_rgb=border_rgb,
+            border_ratio=border_ratio,
+            similar_rgb_distance2=similar_rgb_distance2,
+        )
         if not with_ratio:
             return []
 
@@ -259,34 +295,49 @@ def _extract_dominant_clusters(
 def _extract_dominant_rgbs(image: Image.Image, max_colors: int = 8) -> list[tuple[int, int, int]]:
     clusters = _extract_dominant_clusters(
         image=image,
-        noise=100.0,
+        noise=35.0,
         ignore_background=False,
     )
     return [item["rgb"] for item in clusters[:max_colors]]
 
 
-def _remove_background_cluster(clusters: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _remove_background_cluster(
+    clusters: list[dict[str, Any]],
+    border_rgb: tuple[int, int, int] | None,
+    border_ratio: float,
+    similar_rgb_distance2: int,
+) -> list[dict[str, Any]]:
     if not clusters:
         return clusters
 
+    if border_rgb is None:
+        return clusters
+
     top = clusters[0]
-    if top["ratio"] >= 0.95:
+    if top["ratio"] < 0.90:
+        return clusters
+    if border_ratio < 0.80:
+        return clusters
+
+    tolerance = max(120, int(similar_rgb_distance2 * 2.0))
+    if _rgb_distance2(top["rgb"], border_rgb) > tolerance:
+        return clusters
+
+    if len(clusters) > 1:
         return clusters[1:]
 
-    if len(clusters) > 1 and top["ratio"] >= 0.82:
-        return clusters[1:]
-
-    return clusters
+    # Capa totalmente solida. Si se ignora fondo, no quedan colores.
+    return []
 
 
 def _noise_profile(noise: float) -> tuple[int, int, float, int]:
     n = _normalize_noise(noise) / 100.0
 
     # n bajo: mas global; n alto: mas detalle
-    max_colors = int(round(1 + (n * 23)))  # 1..24
-    similar_distance = int(round(40 - (n * 38)))  # 40..2
-    min_cluster_ratio = 0.22 - (n * 0.215)  # 0.22..0.005
-    quant_shift = int(round(4 - (n * 4)))  # 4..0
+    max_colors = int(round(1 + (n * 31)))  # 1..32
+    similar_distance = int(round(44 - (n * 43)))  # 44..1
+    min_cluster_ratio = 0.25 - (n * 0.249)  # 0.25..0.001
+    quant_shift = int(round(5 - (n * 5)))  # 5..0
 
     distance2 = similar_distance * similar_distance * 3
     return max_colors, distance2, max(0.003, float(min_cluster_ratio)), max(0, quant_shift)
@@ -299,6 +350,133 @@ def _to_preview_data_url(image: Image.Image, size: int = 84) -> str:
     thumb.save(buffer, format="PNG")
     encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{encoded}"
+
+
+def _dominant_border_color(
+    border_bins: dict[tuple[int, int, int], list[float]]
+) -> tuple[tuple[int, int, int] | None, float]:
+    if not border_bins:
+        return None, 0.0
+
+    total = 0.0
+    dominant = None
+    dominant_weight = 0.0
+    for values in border_bins.values():
+        weight = float(values[0])
+        if weight <= 0:
+            continue
+        total += weight
+        if weight > dominant_weight:
+            dominant_weight = weight
+            dominant = values
+
+    if dominant is None or total <= 0:
+        return None, 0.0
+
+    w = float(dominant[0])
+    rgb = (
+        int(round(float(dominant[1]) / w)),
+        int(round(float(dominant[2]) / w)),
+        int(round(float(dominant[3]) / w)),
+    )
+    return rgb, (w / total)
+
+
+def _extract_color_overlay_rgba(layer) -> Image.Image | None:
+    try:
+        effects = layer.effects
+        candidates = list(effects.find("ColorOverlay", enabled=True))
+    except Exception:
+        return None
+    if not candidates:
+        return None
+
+    effect = candidates[0]
+    descriptor = getattr(effect, "color", None)
+    if descriptor is None:
+        return None
+
+    rgb = _descriptor_to_rgb(descriptor)
+    if rgb is None:
+        return None
+
+    opacity = getattr(effect, "opacity", 100)
+    try:
+        opacity_value = float(getattr(opacity, "value", opacity))
+    except Exception:
+        opacity_value = 100.0
+    alpha = int(round(max(0.0, min(100.0, opacity_value)) * 2.55))
+
+    width = max(1, int(getattr(layer, "width", 1) or 1))
+    height = max(1, int(getattr(layer, "height", 1) or 1))
+    return Image.new("RGBA", (width, height), (rgb[0], rgb[1], rgb[2], alpha))
+
+
+def _descriptor_to_rgb(descriptor) -> tuple[int, int, int] | None:
+    try:
+        from psd_tools.terminology import Key
+    except Exception:
+        Key = None
+
+    def _pick(keys: list[Any]) -> float | None:
+        for key in keys:
+            if key is None:
+                continue
+            try:
+                value = descriptor.get(key)
+            except Exception:
+                value = None
+            if value is None:
+                continue
+            raw = getattr(value, "value", value)
+            try:
+                return float(raw)
+            except Exception:
+                continue
+        return None
+
+    red = _pick([getattr(Key, "Red", None), b"Rd  ", "Red", getattr(Key, "RedFloat", None), b"RdF "])
+    green = _pick([getattr(Key, "Green", None), b"Grn ", "Green", getattr(Key, "GreenFloat", None), b"GrnF"])
+    blue = _pick([getattr(Key, "Blue", None), b"Bl  ", "Blue", getattr(Key, "BlueFloat", None), b"BlF "])
+
+    if red is None or green is None or blue is None:
+        return None
+
+    if red <= 1.0 and green <= 1.0 and blue <= 1.0:
+        red *= 255.0
+        green *= 255.0
+        blue *= 255.0
+
+    return (
+        max(0, min(255, int(round(red)))),
+        max(0, min(255, int(round(green)))),
+        max(0, min(255, int(round(blue)))),
+    )
+
+
+def _apply_overlay_color(base_image: Image.Image, overlay_image: Image.Image) -> Image.Image:
+    base = base_image.convert("RGBA")
+    overlay = overlay_image.convert("RGBA")
+    if overlay.size != base.size:
+        overlay = overlay.resize(base.size, Image.Resampling.BILINEAR)
+
+    r, g, b, overlay_alpha = overlay.getpixel((0, 0))
+    alpha_mask = base.getchannel("A")
+
+    if _alpha_is_empty(alpha_mask):
+        return overlay
+
+    factor = overlay_alpha / 255.0
+    combined_alpha = alpha_mask.point(lambda p: int(round(p * factor)))
+
+    colored = Image.new("RGBA", base.size, (r, g, b, 0))
+    colored.putalpha(combined_alpha)
+    return colored
+
+
+def _alpha_is_empty(alpha_image: Image.Image) -> bool:
+    bbox = alpha_image.getbbox()
+    return bbox is None
 
 
 def _normalize_noise(noise: float) -> float:
