@@ -419,14 +419,14 @@ def _parse_noise(value) -> float:
     try:
         return max(0.0, min(100.0, float(value)))
     except Exception:
-        return 35.0
+        return 100.0
 
 
 def _parse_max_colors(value) -> int:
     try:
         return max(0, min(15, int(float(value))))
     except Exception:
-        return 0
+        return 8
 
 
 def _parse_mode(value) -> str:

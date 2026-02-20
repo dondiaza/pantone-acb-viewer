@@ -19,8 +19,8 @@ def suggest_from_file_bytes(
     repository: ACBRepository,
     palette_id: str,
     mode: str = "normal",
-    noise: float = 35.0,
-    max_colors: int = 0,
+    noise: float = 100.0,
+    max_colors: int = 8,
     include_hidden: bool = False,
     include_overlay: bool = True,
     ignore_background: bool = False,
@@ -59,26 +59,22 @@ def suggest_from_file_bytes(
                 nearest = repository.nearest_in_book(rgb, palette_id, mode=mode)
             except TypeError:
                 nearest = repository.nearest_in_book(rgb, palette_id)
-            if mode == "expert":
-                detected_lab = rgb_to_lab_d50(rgb)
-                pantone_lab = rgb_to_lab_d50(
-                    (
-                        int(nearest["hex"][1:3], 16),
-                        int(nearest["hex"][3:5], 16),
-                        int(nearest["hex"][5:7], 16),
-                    )
+            detected_lab = rgb_to_lab_d50(rgb)
+            pantone_lab = rgb_to_lab_d50(
+                (
+                    int(nearest["hex"][1:3], 16),
+                    int(nearest["hex"][3:5], 16),
+                    int(nearest["hex"][5:7], 16),
                 )
-                delta_e = float(delta_e_ciede2000(detected_lab, pantone_lab))
-                reliability = reliability_label(delta_e)
-            else:
-                delta_e = None
-                reliability = None
+            )
+            delta_e = float(delta_e_ciede2000(detected_lab, pantone_lab))
+            reliability = reliability_label(delta_e)
             layer_colors.append(
                 {
                     "detected_hex": detected_hex,
                     "pantone": nearest,
                     "weight": cluster["weight"],
-                    "delta_e": round(delta_e, 3) if delta_e is not None else None,
+                    "delta_e": round(delta_e, 3),
                     "reliability": reliability,
                 }
             )
@@ -531,7 +527,7 @@ def _normalize_noise(noise: float) -> float:
     try:
         value = float(noise)
     except Exception:
-        value = 35.0
+        value = 100.0
     return max(0.0, min(100.0, value))
 
 
@@ -539,7 +535,7 @@ def _normalize_max_colors(max_colors: int | float | None) -> int:
     try:
         value = int(float(max_colors))
     except Exception:
-        value = 0
+        value = 8
     return max(0, min(15, value))
 
 

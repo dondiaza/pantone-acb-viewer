@@ -217,8 +217,23 @@ class ACBRepository:
                     "scope": scope_label,
                     "scope_book_id": scope_book_id,
                     "exact_count": 1,
-                    "exact_matches": [forced_match],
-                    "nearest": [forced_match | {"distance": 0}],
+                    "exact_matches": [
+                        forced_match | {"distance": 0, "delta_e": 0.0, "reliability": "Excelente", "score": 0.0}
+                    ],
+                    "nearest": [
+                        forced_match | {"distance": 0, "delta_e": 0.0, "reliability": "Excelente", "score": 0.0}
+                    ],
+                    "input_rgb": target_rgb,
+                    "top5": [
+                        forced_match
+                        | {
+                            "distance": 0,
+                            "delta_e": 0.0,
+                            "reliability": "Excelente",
+                            "score": 0.0,
+                            "reason": "Coincidencia exacta acromatica fija.",
+                        }
+                    ],
                 }
             probable = None
             if achromatic_enabled:
@@ -276,7 +291,15 @@ class ACBRepository:
                     }
 
                     if str(color.get("hex", "")).upper() == normalized_hex:
-                        exact_matches.append(item)
+                        exact_matches.append(
+                            item
+                            | {
+                                "distance": 0,
+                                "delta_e": 0.0,
+                                "reliability": "Excelente",
+                                "score": 0.0,
+                            }
+                        )
 
                     rgb = tuple(color.get("rgb") or _hex_to_rgb(str(color.get("hex"))))
                     lab = tuple(color.get("lab_d50") or rgb_to_lab_d50(rgb))
@@ -290,13 +313,12 @@ class ACBRepository:
             nearest.sort(key=lambda row: row[0])
             nearest_items = []
             for score, delta_e, distance, item in nearest[:limit]:
-                item_with_meta = item | {"distance": int(round(distance))}
-                if mode == "expert":
-                    item_with_meta |= {
-                        "delta_e": round(delta_e, 3),
-                        "reliability": reliability_label(delta_e),
-                        "score": round(score, 3),
-                    }
+                item_with_meta = item | {
+                    "distance": int(round(distance)),
+                    "delta_e": round(delta_e, 3),
+                    "reliability": reliability_label(delta_e),
+                    "score": round(score, 3),
+                }
                 nearest_items.append(item_with_meta)
 
             top5 = nearest_items[:5]
@@ -316,9 +338,8 @@ class ACBRepository:
                 "exact_matches": exact_matches[:limit],
                 "nearest": nearest_items,
             }
-            if mode == "expert":
-                payload["input_rgb"] = target_rgb
-                payload["top5"] = top5
+            payload["input_rgb"] = target_rgb
+            payload["top5"] = top5
             return payload
 
     def nearest_in_book(
@@ -398,11 +419,10 @@ class ACBRepository:
                 "code": color["code"] or None,
                 "hex": color["hex"],
                 "distance": distance,
+                "delta_e": color["delta_e"],
+                "reliability": color["reliability"],
+                "score": round(score, 3),
             }
-            if mode == "expert":
-                payload["delta_e"] = color["delta_e"]
-                payload["reliability"] = color["reliability"]
-                payload["score"] = round(score, 3)
             return payload
 
     def _require_book(self, book_id: str) -> tuple[Path, Book, CacheEntry]:

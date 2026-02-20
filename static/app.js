@@ -75,6 +75,14 @@ function setupCollapseAll() {
     document.querySelectorAll("details.book").forEach((item) => {
       item.open = false;
     });
+    const searchSection = document.getElementById("searchResults");
+    const psdSection = document.getElementById("psdResults");
+    if (searchSection) {
+      searchSection.hidden = true;
+    }
+    if (psdSection) {
+      psdSection.hidden = true;
+    }
   });
   collapseExcept.addEventListener("click", () => {
     const selected = state.openBookId;
@@ -393,7 +401,8 @@ async function loadBooks() {
     return;
   }
 
-  state.books = books.filter((book) => !book.error);
+  const availableBooks = books.filter((book) => !book.error);
+  state.books = availableBooks.length > 0 ? availableBooks : books;
   state.defaultPaletteId = payload.default_palette_id || findDefaultPaletteId(state.books);
   populatePaletteSelectors(state.books, state.defaultPaletteId);
 
@@ -431,17 +440,25 @@ function populatePaletteSelectors(books, defaultId) {
   searchSelect.appendChild(allOption);
 
   for (const book of books) {
-    const label = `${book.title} (${book.format})`;
+    const title = book.title || book.filename || book.id;
+    const format = book.format || "UNK";
+    const label = book.error ? `${title} (${format}) [error]` : `${title} (${format})`;
     searchSelect.appendChild(new Option(label, book.id));
-    psdSelect.appendChild(new Option(label, book.id));
+    if (!book.error) {
+      psdSelect.appendChild(new Option(label, book.id));
+    }
   }
 
-  if (defaultId) {
-    searchSelect.value = defaultId;
-    psdSelect.value = defaultId;
+  const selectedDefault = defaultId || findDefaultPaletteId(books);
+  if (selectedDefault && [...searchSelect.options].some((option) => option.value === selectedDefault)) {
+    searchSelect.value = selectedDefault;
   } else {
     searchSelect.value = "";
-    psdSelect.value = "";
+  }
+  if (selectedDefault && [...psdSelect.options].some((option) => option.value === selectedDefault)) {
+    psdSelect.value = selectedDefault;
+  } else {
+    psdSelect.value = psdSelect.options.length > 0 ? psdSelect.options[0].value : "";
   }
 }
 
@@ -694,7 +711,7 @@ function renderSearchResults(payload) {
     meta.className = "code";
     meta.textContent = item.book_title;
     card.querySelector(".card-body").appendChild(meta);
-    if (state.mode === "expert" && typeof item.delta_e === "number") {
+    if (typeof item.delta_e === "number") {
       const chip = createDeltaChip(item.delta_e, item.reliability || "");
       card.querySelector(".card-body").appendChild(chip);
     }
@@ -719,7 +736,7 @@ function renderSearchResults(payload) {
     path.className = "path";
     path.textContent = `(${item.book_title})`;
     line.appendChild(path);
-    if (state.mode === "expert" && typeof item.delta_e === "number") {
+    if (typeof item.delta_e === "number") {
       const chip = createDeltaChip(item.delta_e, item.reliability || "");
       line.appendChild(chip);
     }
@@ -937,7 +954,7 @@ function createLayerColorCard(layer) {
     label.className = "psd-swatch-label";
     label.textContent = `Color ${index + 1}`;
 
-    if (state.mode === "expert") {
+    {
       const compare = document.createElement("div");
       compare.className = "compare-row";
       const detected = document.createElement("span");
@@ -948,6 +965,11 @@ function createLayerColorCard(layer) {
       compare.appendChild(swatch.cloneNode());
       item.appendChild(compare);
     }
+
+    const rankOverlay = document.createElement("span");
+    rankOverlay.className = "rank-overlay";
+    rankOverlay.textContent = `#${index + 1}`;
+    item.appendChild(rankOverlay);
 
     item.appendChild(swatch);
     item.appendChild(label);
@@ -965,7 +987,7 @@ function createLayerColorCard(layer) {
       Detectado <span class="hex">${color.detected_hex}</span> ->
       ${escapeHtml(color.pantone.name)} <span class="hex">${color.pantone.hex}</span>
     `;
-    if (state.mode === "expert" && typeof color.delta_e === "number") {
+    if (typeof color.delta_e === "number") {
       line.appendChild(createDeltaChip(color.delta_e, color.reliability || ""));
     }
     meta.appendChild(line);

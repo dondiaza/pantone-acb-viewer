@@ -366,6 +366,7 @@ body[data-lod="medium"] .card .line {
 .psd-swatch-wrap {
   width: 80px;
   text-align: center;
+  position: relative;
 }
 
 .psd-swatch {
@@ -373,6 +374,25 @@ body[data-lod="medium"] .card .line {
   height: 56px;
   border-radius: 8px;
   border: 1px solid var(--border);
+}
+
+.rank-overlay {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #fff;
+  font-size: 0.72rem;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+
+.psd-swatch-wrap:hover .rank-overlay {
+  opacity: 1;
 }
 
 .psd-swatch-label {
