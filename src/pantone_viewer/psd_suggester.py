@@ -46,7 +46,9 @@ def suggest_from_file_bytes(
             image=layer["image"],
             noise=noise,
             ignore_background=ignore_background,
-            max_colors=max_colors,
+            # El limitador de max_colors aplica solo al resumen global.
+            # El detalle por capa conserva el muestreo automatico por ruido.
+            max_colors=0,
         )
         if not color_clusters:
             continue

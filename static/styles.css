@@ -266,6 +266,35 @@ body[data-lod="medium"] .card .line {
   aspect-ratio: 1 / 1;
   width: 100%;
   border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.swatch-original-preview {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 50%;
+  opacity: 0;
+  transition: opacity 130ms ease;
+  border-top: 1px solid rgba(255, 255, 255, 0.45);
+}
+
+.card:hover .swatch-original-preview {
+  opacity: 1;
+}
+
+.swatch-rank {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #fff;
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 7px;
 }
 
 .card-body {

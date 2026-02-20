@@ -1,4 +1,4 @@
-"use strict";
+﻿"use strict";
 
 const MAX_PSD_UPLOAD_BYTES = 150 * 1024 * 1024;
 const ALLOWED_IMAGE_EXTENSIONS = [".psd", ".png", ".jpg", ".jpeg"];
@@ -579,7 +579,7 @@ function createExpertBookExplorer(bookId, initialColors) {
     const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
     page = Math.max(0, Math.min(page, totalPages - 1));
     const pageItems = filtered.slice(page * pageSize, (page + 1) * pageSize);
-    pageInfo.textContent = `Pagina ${page + 1}/${totalPages} · ${filtered.length} resultados`;
+    pageInfo.textContent = `Pagina ${page + 1}/${totalPages} Â· ${filtered.length} resultados`;
     grid.innerHTML = "";
     grid.appendChild(renderColorGrid(pageItems));
   };
@@ -658,6 +658,18 @@ function createColorCard(color) {
   swatch.className = "swatch";
   swatch.style.background = color.hex;
   swatch.title = color.hex;
+  if (color._original_hex) {
+    const originalPreview = document.createElement("div");
+    originalPreview.className = "swatch-original-preview";
+    originalPreview.style.background = color._original_hex;
+    swatch.appendChild(originalPreview);
+  }
+  if (Number.isFinite(Number(color._rank))) {
+    const rankBadge = document.createElement("span");
+    rankBadge.className = "swatch-rank";
+    rankBadge.textContent = `#${Number(color._rank)}`;
+    swatch.appendChild(rankBadge);
+  }
   card.appendChild(swatch);
 
   const body = document.createElement("div");
@@ -697,16 +709,20 @@ function renderSearchResults(payload) {
   section.hidden = false;
   cardsRoot.innerHTML = "";
   textList.innerHTML = "";
+  textList.hidden = true;
 
-  const exact = payload.exact_matches || [];
   const nearest = payload.nearest || [];
-  const top5 = payload.top5 || [];
+  const originalHex = payload.query || "";
+  summary.textContent = `${payload.query} | ambito: ${payload.scope} | resultados: ${nearest.length}`;
 
-  summary.textContent = `${payload.query} | ambito: ${payload.scope} | coincidencias exactas: ${payload.exact_count}`;
-
-  const cardSource = exact.length > 0 ? exact : nearest.slice(0, 48);
-  for (const item of cardSource) {
-    const card = createColorCard(item);
+  const cardSource = nearest.slice(0, 72);
+  for (let index = 0; index < cardSource.length; index += 1) {
+    const item = cardSource[index];
+    const card = createColorCard({
+      ...item,
+      _rank: index + 1,
+      _original_hex: originalHex,
+    });
     const meta = document.createElement("div");
     meta.className = "code";
     meta.textContent = item.book_title;
@@ -718,65 +734,19 @@ function renderSearchResults(payload) {
     cardsRoot.appendChild(card);
   }
 
-  const textSource = exact.length > 0 ? exact : nearest.slice(0, 150);
-  for (const item of textSource) {
-    const line = document.createElement("div");
-    line.className = "search-line";
-
-    const name = document.createElement("strong");
-    name.textContent = item.name;
-    line.appendChild(name);
-
-    const hex = document.createElement("span");
-    hex.className = "hex";
-    hex.textContent = ` ${item.hex} `;
-    line.appendChild(hex);
-
-    const path = document.createElement("span");
-    path.className = "path";
-    path.textContent = `(${item.book_title})`;
-    line.appendChild(path);
-    if (typeof item.delta_e === "number") {
-      const chip = createDeltaChip(item.delta_e, item.reliability || "");
-      line.appendChild(chip);
-    }
-    if (state.mode === "expert" && item.reason) {
-      const why = document.createElement("span");
-      why.className = "path";
-      why.textContent = ` · ${item.reason}`;
-      line.appendChild(why);
-    }
-
-    textList.appendChild(line);
-  }
-
-  if (state.mode === "expert" && top5.length > 0) {
-    const title = document.createElement("div");
-    title.className = "hint";
-    title.textContent = "Top 5 y por qué:";
-    textList.appendChild(title);
-    top5.forEach((item, idx) => {
-      const line = document.createElement("div");
-      line.className = "search-line";
-      line.textContent = `${idx + 1}. ${item.name} (${item.hex}) - ${item.reason || ""}`;
-      textList.appendChild(line);
-    });
-  }
-
-  if (textSource.length === 0) {
+  if (cardSource.length === 0) {
     const empty = document.createElement("div");
     empty.className = "message";
     empty.textContent = "Sin coincidencias.";
-    textList.appendChild(empty);
+    cardsRoot.appendChild(empty);
   }
 }
-
 function createDeltaChip(delta, reliability) {
   const chip = document.createElement("span");
   const rel = String(reliability || "Dudoso");
   const normalized = rel.toLowerCase();
   chip.className = `delta-chip ${normalized}`;
-  chip.textContent = `ΔE ${Number(delta).toFixed(2)} · ${rel}`;
+  chip.textContent = `Î”E ${Number(delta).toFixed(2)} Â· ${rel}`;
   return chip;
 }
 
@@ -1059,3 +1029,5 @@ function clearMessages() {
   const root = document.getElementById("messages");
   root.innerHTML = "";
 }
+
+

@@ -184,7 +184,7 @@ def test_ignore_background_does_not_remove_when_border_not_uniform() -> None:
     assert any(color["detected_hex"] == "#FFFFFF" for color in first_layer["colors"])
 
 
-def test_max_colors_caps_detected_suggestions() -> None:
+def test_max_colors_caps_summary_but_not_layer_detail() -> None:
     image = Image.new("RGBA", (6, 2))
     image.putdata(
         [
@@ -216,7 +216,7 @@ def test_max_colors_caps_detected_suggestions() -> None:
     )
 
     assert len(payload["layers"]) == 1
-    assert len(payload["layers"][0]["colors"]) == 1
+    assert len(payload["layers"][0]["colors"]) >= 2
     assert payload["options"]["max_colors"] == 1
     assert len(payload["summary_colors"]) == 1
 
